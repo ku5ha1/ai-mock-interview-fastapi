@@ -25,3 +25,4 @@ numpy==1.26.4
 SpeechRecognition==3.10.0
 python-docx
 langchain-openai
+qdrant-client

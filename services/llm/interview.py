@@ -6,7 +6,7 @@ from openai.types.chat import (
     ChatCompletionAssistantMessageParam
 )
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,8 @@ Guidelines:
 async def get_next_question(
     questions: List[Dict[str, Any]],
     is_base_question: bool = False,
-    topic: str = ""
+    topic: str = "",
+    rag_context: Optional[str] = None
 ) -> str:
     try:
         if is_base_question:
@@ -31,6 +32,12 @@ async def get_next_question(
         messages: List[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(role="system", content=SYSTEM_PROMPT)
         ]
+
+        if rag_context:
+            messages.append(ChatCompletionUserMessageParam(
+                role="user",
+                content=f"Reference Context for this topic/question:\n{rag_context}"
+            ))
 
         for q in questions:
             if "question" in q and "answer" in q:

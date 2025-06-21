@@ -32,17 +32,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variable to store RAG retriever
 rag_retriever = None
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     try:
         logger.info(f"Incoming request - Path: {request.url.path}, Method: {request.method}")
-        
         env_vars = {k: v for k, v in os.environ.items() if k in ['MONGODB_URI', 'DB_NAME']}
         logger.info(f"Environment variables present: {list(env_vars.keys())}")
-        
         response = await call_next(request)
         if response.status_code >= 400:
             logger.error(f"Error Response - Status: {response.status_code}, Path: {request.url.path}, Method: {request.method}")
@@ -84,39 +81,33 @@ async def startup_event():
             raise ValueError("OPENAI_API_KEY environment variable is not set")
             
         logger.info("Environment variables validated")
-            
-        # Initialize database connection
+        
         logger.info("Attempting to connect to database...")
         db = await get_db()
         logger.info("Database connection successful")
         
-        # Create indexes if not exists
         logger.info("Creating database indexes...")
         await create_indexes()
         logger.info("Database indexes created successfully")
         
-        # Check collections
         logger.info("Checking database collections...")
         await check_collections()
         logger.info("Database collections verified")
         
-        # Initialize RAGRetriever on app startup
         try:
             logger.info("Initializing RAG retriever...")
             from services.rag.retriever_factory import get_rag_retriever
             global rag_retriever
             rag_retriever = await get_rag_retriever()
             logger.info("RAGRetriever initialized during startup")
-        except Exception as rag_error:
-            logger.error(f"Error initializing RAGRetriever at startup: {str(rag_error)}")
-            # Don't raise here - let the app start even if RAG fails
-            # RAG endpoints will handle the error gracefully
-        
-        # Log startup completion
+        except Exception as e:
+            logger.warning(f"Failed to initialize RAGRetriever: {str(e)}")
+            
         logger.info("Application startup completed successfully")
         
     except Exception as e:
         error_msg = f"Startup Error: {str(e)}\n{traceback.format_exc()}"
+        logger.warning(f"Failed to initialize RAGRetriever: {str(e)}")
         logger.error(error_msg)
         if IS_LAMBDA:
             raise
@@ -133,11 +124,9 @@ async def health_check():
     Health check endpoint for monitoring
     """
     try:
-        # Check database connection
         db = await get_db()
         await db.command("ping")
         
-        # Check RAG system status
         try:
             from services.rag.retriever_factory import get_retriever_status
             rag_status = get_retriever_status()

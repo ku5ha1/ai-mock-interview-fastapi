@@ -1,19 +1,17 @@
-import numpy as np
 import logging
 from typing import List
-
 from services.rag.embedding import get_embedding
+from services.rag.qdrant_client import client as qdrant_client
 
 logger = logging.getLogger(__name__)
 
 class RAGRetriever:
-    def __init__(self, index, texts):
-        self.index = index
-        self.texts = texts
+    def __init__(self, collection_name: str = "docs"):
+        self.collection_name = collection_name
 
     async def retrieve_context(self, query: str, top_k: int = 3) -> List[str]:
         """
-        Retrieve most relevant context based on query
+        Retrieve most relevant context based on query using Qdrant
 
         Args:
             query (str): User's question
@@ -30,17 +28,13 @@ class RAGRetriever:
                 logger.warning("Empty embedding for query")
                 return []
 
-            # Convert to numpy array and normalize
-            query_vector = np.array([query_embedding]).astype("float32")
-
-            # Search FAISS index
-            results = self.index.search(query_vector, top_k)
-            distances, indices = results[0], results[1]
-
-            # Map indices to document texts
-            valid_indices = [idx for idx in indices[0] if 0 <= idx < len(self.texts)]
-            results = [self.texts[idx] for idx in valid_indices]
-            
+            # Search Qdrant collection
+            search_result = qdrant_client.search(
+                collection_name=self.collection_name,
+                query_vector=query_embedding,
+                limit=top_k
+            )
+            results = [hit.payload["text"] for hit in search_result if hit.payload and "text" in hit.payload]
             logger.info(f"Retrieved {len(results)} context chunks for query: {query[:100]}...")
             return results
 

@@ -7,6 +7,8 @@ from functools import wraps
 import asyncio
 import json
 import tiktoken
+from dotenv import load_dotenv
+load_dotenv()
 
 TOKEN_LIMIT = 8192
 

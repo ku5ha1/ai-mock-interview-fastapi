@@ -1,5 +1,3 @@
-# services/rag/doc_loader.py
-
 from docx import Document
 import os
 import logging
