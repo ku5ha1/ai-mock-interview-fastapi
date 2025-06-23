@@ -23,6 +23,6 @@ annotated-types==0.7.0
 sounddevice==0.4.6
 numpy==1.26.4
 SpeechRecognition==3.10.0
-python-docx
+python-docx 
 langchain-openai
 qdrant-client

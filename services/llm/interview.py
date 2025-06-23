@@ -38,20 +38,10 @@ async def get_next_question(
                 role="user",
                 content=f"Reference Context for this topic/question:\n{rag_context}"
             ))
-
+        
+        # questions is now a list of ChatCompletionMessageParam compatible dicts
         for q in questions:
-            if "question" in q and "answer" in q:
-                # User asks question → use "user"
-                messages.append(ChatCompletionUserMessageParam(
-                    role="user",
-                    content=q["question"]
-                ))
-                # Assistant responds → use "assistant"
-                if q["answer"]:
-                    messages.append(ChatCompletionAssistantMessageParam(
-                        role="assistant",
-                        content=q["answer"]
-                    ))
+            messages.append(q)
 
         # Add final instruction
         messages.append(ChatCompletionUserMessageParam(

@@ -33,28 +33,67 @@ class ApproachAnalysisService:
             # Build final prompt with or without context
             name_reference = f"{user_name}" if user_name else "the candidate"
             prompt = f"""
-Question: {question}
-User's Answer: {user_answer}
+You are an expert data science and AI interviewer. You specialize in conducting technical interviews for data science, analytics, and ML roles at companies like Meta, Google, Airbnb, and Stripe.
 
-Analyze the approach and provide intelligent, contextual feedback based on the following guidelines:
-1. Use any provided context to validate the answer and provide specific, relevant suggestions
-2. Highlight strengths that are directly related to the question asked
-3. Identify gaps or misunderstandings specific to this question's context
-4. Score out of 10 based on accuracy and completeness for this specific question
-5. Provide natural, conversational feedback that feels like a real conversation
-6. Make suggestions that are directly relevant to the current question, not generic advice
-7. Avoid repetitive name usage and templated language
-8. Connect feedback directly to the user's specific answer and the question context
+Your task is to evaluate a candidate's written approach to a data science interview-style question. This is NOT about writing perfect code, but about assessing the candidate's high-level thinking, clarity, structure, and analytical depth.
 
-The feedback should feel like a knowledgeable mentor giving specific, actionable advice for this particular question, not a generic evaluation.
+The goal is to simulate the feedback they'd get from a top-tier interviewer. Your feedback should reflect how they would be judged in a real technical interview.
 
-Return ONLY JSON with:
-{{
-    "feedback": "...",
-    "strengths": [...],
-    "areas_for_improvement": [...],
-    "score": score
-}}
+---
+
+Your Evaluation Framework:
+
+Assess the candidate's response using these 6 structured feedback sections:
+
+### 1. Structure & Clarity  
+- Did they break down the problem logically and clearly?  
+- Did they show a step-by-step approach or just brainstorm loosely?  
+- Interviewers want clarity of thought, not speed.
+
+### 2. 🚫 What Was Missing  
+- What critical step or concept was not covered?  
+- Only include what would be considered a key miss in an actual interview.  
+- For example: missing evaluation metric in ML, not defining business metric in product sense, not checking nulls in SQL.
+
+### 3. 👁️ Blind Spots  
+- Subtle but important things they missed that top candidates usually catch.  
+- For example: ignoring baseline model in ML, ignoring tie behavior in SQL, ignoring acquisition in product sense.  
+- These often cost candidates the offer.
+
+### 4. Historical Tracking  
+- Based on past attempts, did they improve or repeat the same mistakes?  
+- Pull in relevant feedback only. If none apply, say "N/A".
+
+### 5. Interview Variations / Scenario Extensions  
+- Suggest how the question could be modified in real interviews.  
+- Offer 1–2 variations and how their approach would need to adapt.
+
+### 6.  Final Interview Tip  
+- End with a crisp, interview-specific coaching insight they can apply to future questions.  
+- It should be tactical and relevant to this module (ML, SQL, Product, Guesstimate, etc.)
+
+---
+
+Current Question Info:
+**Module:** [e.g., SQL / ML / Product Sense / Guesstimate]  
+**Topic:** [e.g., Model Evaluation]  
+**Subtopic:** [e.g., Precision Drop]  
+**Question:**  
+{question}
+
+**Candidate's Response:**  
+{user_answer}
+
+---
+
+Candidate's Prior Feedback (Last 30 Days):  
+Only refer to this if directly relevant to what the candidate said.
+
+[Insert relevant prior feedback here if available]
+
+---
+
+Generate the 6 sections. Do not explain them. Keep it sharp, honest, and professional—like a real interviewer giving expert-level critique.
 
 Context:
 {context}

@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 class InterviewInit(BaseModel):
     topic: str
-    user_name: str
     user_id: str
 
 class InterviewResponse(BaseModel):
@@ -19,7 +18,6 @@ class AnswerRequest(BaseModel):
     session_id: str
     answer: str
     clarification: bool = False
-    user_id: str
 
 class ClarificationRequest(BaseModel):
     session_id: str

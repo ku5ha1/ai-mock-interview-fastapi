@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from services.db import (
-    get_db, fetch_base_question, get_available_topics, validate_user_id, 
+    fetch_interactions_for_session, fetch_user_history, get_db, fetch_base_question, get_available_topics, save_user_ai_interaction, validate_user_id, 
     create_interview_session, get_interview_session, update_interview_session_answer,
     add_follow_up_question, transition_to_coding_phase, save_interview_feedback,
-    get_user_interview_sessions, get_personalized_context
+    get_user_interview_sessions, get_personalized_context, get_user_name_from_id
 )
 from services.llm.interview import get_next_question
 from services.llm.feedback import get_feedback
@@ -21,37 +21,28 @@ router = APIRouter(prefix="/mock", tags=["Mock Interview"])
 
 @router.post("/init")
 async def init_interview(init_data: InterviewInit):
-    # Validate user_id
     if not await validate_user_id(init_data.user_id):
         raise HTTPException(status_code=404, detail="User not found")
     try:
-        # Generate session ID
-        session_id = f"{init_data.user_name}_{init_data.topic}_{datetime.now().timestamp()}"
-        
-        # Get base question
+        session_id = f"{init_data.user_id}_{init_data.topic}_{datetime.now().timestamp()}"
         base_question_data = await fetch_base_question(init_data.topic)
-        
-        # Retrieve RAG context for the topic
         retriever = await get_rag_retriever()
         rag_context = ""
         if retriever is not None:
             context_chunks = await retriever.retrieve_context(init_data.topic)
             rag_context = "\n\n".join(context_chunks)
-        
-        # Get first follow-up question
         try:
             first_follow_up = await get_next_question([], is_base_question=True, topic=init_data.topic, rag_context=rag_context)
         except Exception as e:
             logger.error(f"Error generating follow-up question: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error generating follow-up question: {str(e)}")
-
-        # Create structured interview session
         try:
+            user_name = await get_user_name_from_id(init_data.user_id)
             await create_interview_session(
                 user_id=init_data.user_id,
                 session_id=session_id,
                 topic=init_data.topic,
-                user_name=init_data.user_name,
+                user_name=user_name,
                 base_question_data=base_question_data,
                 first_follow_up=first_follow_up
             )
@@ -59,7 +50,6 @@ async def init_interview(init_data: InterviewInit):
         except Exception as e:
             logger.error(f"Failed to create interview session: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to create interview session: {str(e)}")
-
         response = {
             "session_id": session_id,
             "base_question": base_question_data["question"],
@@ -70,7 +60,6 @@ async def init_interview(init_data: InterviewInit):
             "language": base_question_data["language"],
             "first_follow_up": first_follow_up
         }
-        
         return response
     except HTTPException:
         raise
@@ -80,126 +69,115 @@ async def init_interview(init_data: InterviewInit):
 
 @router.post("/answer")
 async def submit_answer(answer_request: AnswerRequest = Body(...)):
-    # Validate user_id
-    if not await validate_user_id(answer_request.user_id):
-        raise HTTPException(status_code=404, detail="User not found")
     try:
         session_id = answer_request.session_id
-        user_id = answer_request.user_id
-        
         # Get the complete interview session
         session = await get_interview_session(session_id)
         if not session:
             logger.error(f"Session not found: {session_id}")
             raise HTTPException(status_code=404, detail="Interview session not found")
         
-        # Update the session with the user's answer
-        await update_interview_session_answer(session_id, answer_request.answer, answer_request.clarification)
+        current_phase = session["meta"]["session_data"]["current_phase"]
+        
+        # Handle clarification requests during the coding phase
+        if current_phase == "coding":
+            if answer_request.clarification:
+                try:
+                    base_question = session["meta"]["session_data"]["questions"][0]["question"]
+                    clarification_resp = await get_clarification(base_question, answer_request.answer)
+                    await update_interview_session_answer(session_id, answer_request.answer, True)
+                    return {
+                        "question": clarification_resp,
+                        "clarification": True,
+                        "ready_to_code": True,
+                        "language": session["ai_response"]["language"]
+                    }
+                except Exception as e:
+                    logger.error(f"Error generating clarification: {str(e)}", exc_info=True)
+                    raise HTTPException(status_code=500, detail=f"Error generating clarification: {str(e)}")
+            else:
+                 # If it's the coding phase, but not a clarification, it's the final code submission
+                await update_interview_session_answer(session_id, answer_request.answer, False)
+                await transition_to_coding_phase(session_id)
+                return {"message": "Code submitted successfully. Generating feedback."}
+
+        # Update the session with the user's answer for the questioning phase
+        await update_interview_session_answer(session_id, answer_request.answer, False)
         
         # Get updated session data
         session = await get_interview_session(session_id)
         session_data = session["meta"]["session_data"]
         
-        # Determine next action based on current phase and question count
+        # Retrieve RAG context for quality check and next question
+        retriever = await get_rag_retriever()
+        rag_context = ""
+        if retriever:
+            context_chunks = await retriever.retrieve_context(session_data["topic"])
+            rag_context = "\n\n".join(context_chunks)
+
+        # Check the quality of the user's most recent answer
+        last_answered_question = None
+        for q in reversed(session_data["follow_up_questions"]):
+            if q.get("answer"):
+                last_answered_question = q
+                break
+        if not last_answered_question:
+            last_answered_question = session_data["follow_up_questions"][-1]
+        quality = await check_single_answer_quality(
+            question=last_answered_question["question"],
+            answer=last_answered_question.get("answer", ""),
+            topic=session_data["topic"],
+            rag_context=rag_context
+        )
+
+        if quality == "bad":
+            return {
+                "question": f"{last_answered_question['question']}\n\nYour answer seems unclear or irrelevant. Could you please try again?",
+                "ready_to_code": False,
+                "language": session["ai_response"]["language"]
+            }
+
+        # Determine next action based on question count
         total_questions = session_data["total_questions"]
-        current_phase = session_data["current_phase"]
         
-        if current_phase == "questioning" and total_questions < 5:
-            # Continue with follow-up questions
-            retriever = await get_rag_retriever()
-            rag_context = ""
-            if retriever is not None:
-                context_chunks = await retriever.retrieve_context(session_data["topic"])
-                rag_context = "\n\n".join(context_chunks)
-            
-            # Prepare questions for LLM (base question + follow-up questions with answers)
-            questions_for_llm = []
-            # Add base question
-            if session_data["questions"]:
-                questions_for_llm.append({
-                    "question": session_data["questions"][0]["question"],
-                    "answer": session_data["questions"][0]["answer"]
-                })
-            # Add follow-up questions with answers
+        # If less than 5 questions, ask the next follow-up
+        if total_questions < 5:
+            # Correctly assign roles: AI's question is 'assistant', user's answer is 'user'
+            conversation_history = []
+            if session_data.get("questions"):
+                base_question = session_data["questions"][0]
+                # The base question is provided by the system, so it's an assistant role
+                conversation_history.append({"role": "assistant", "content": base_question["question"]})
+
             for q in session_data["follow_up_questions"]:
-                questions_for_llm.append({
-                    "question": q["question"],
-                    "answer": q["answer"]
-                })
+                conversation_history.append({"role": "assistant", "content": q["question"]})
+                if q.get("answer"):
+                    conversation_history.append({"role": "user", "content": q["answer"]})
             
             try:
-                next_question = await get_next_question(questions_for_llm, topic=session_data["topic"], rag_context=rag_context)
+                next_question = await get_next_question(conversation_history, topic=session_data["topic"], rag_context=rag_context)
                 await add_follow_up_question(session_id, next_question)
                 
-                ai_response = {
+                return {
                     "question": next_question,
                     "ready_to_code": False,
                     "language": session["ai_response"]["language"]
                 }
-                return ai_response
             except Exception as e:
                 logger.error(f"Error generating next question: {str(e)}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"Error generating next question: {str(e)}")
         
-        elif current_phase == "questioning" and total_questions == 5:
-            # Check answer quality and transition to coding if good
-            questions_for_quality_check = []
-            if session_data["questions"]:
-                questions_for_quality_check.append({
-                    "question": session_data["questions"][0]["question"],
-                    "answer": session_data["questions"][0]["answer"]
-                })
-            for q in session_data["follow_up_questions"]:
-                questions_for_quality_check.append({
-                    "question": q["question"],
-                    "answer": q["answer"]
-                })
-            
-            quality = await check_answer_quality(questions_for_quality_check, session_data["topic"])
-            if quality == "good":
-                await transition_to_coding_phase(session_id)
-                ai_response = {
-                    "question": "You can start coding. Ask clarifications if needed.",
-                    "clarification": True,
-                    "ready_to_code": True,
-                    "code_stub": session["ai_response"]["code_stub"],
-                    "language": session["ai_response"]["language"],
-                    "tags": session["ai_response"]["tags"]
-                }
-                return ai_response
-            else:
-                ai_response = {
-                    "question": "Your answers so far seem unclear or incomplete. Please review and try again before proceeding.",
-                    "ready_to_code": False,
-                    "language": session["ai_response"]["language"]
-                }
-                return ai_response
-        
-        elif current_phase == "coding":
-            # Handle clarification requests
-            if answer_request.clarification:
-                try:
-                    base_question = session_data["questions"][0]["question"]
-                    clarification_resp = await get_clarification(base_question, answer_request.answer)
-                    
-                    ai_response = {
-                        "clarification": clarification_resp,
-                        "ready_to_code": True,
-                        "language": session["ai_response"]["language"]
-                    }
-                    return ai_response
-                except Exception as e:
-                    logger.error(f"Error generating clarification: {str(e)}", exc_info=True)
-                    raise HTTPException(status_code=500, detail=f"Error generating clarification: {str(e)}")
-            else:
-                return {
-                    "question": "You can only ask clarifications after starting the coding phase.",
-                    "ready_to_code": False,
-                    "language": session["ai_response"]["language"]
-                }
-        
+        # If 5 questions have been answered well, transition to coding phase
         else:
-            raise HTTPException(status_code=400, detail="Invalid session state")
+            await transition_to_coding_phase(session_id)
+            return {
+                "question": "You can start coding now. If you need clarification on the problem, please ask.",
+                "clarification": True,
+                "ready_to_code": True,
+                "code_stub": session["ai_response"]["code_stub"],
+                "language": session["ai_response"]["language"],
+                "tags": session["ai_response"]["tags"]
+            }
 
     except HTTPException:
         raise
@@ -295,53 +273,6 @@ async def get_topics():
         return {"topics": topics}
     except Exception as e:
         logger.error(f"Error getting topics: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/clarify")
-async def ask_clarification(clarification_request: ClarificationRequest):
-    try:
-        logger.info(f"Requesting clarification for session: {clarification_request.session_id}")
-        # Find the user_id from the latest interaction for this session
-        db = await get_db()
-        last_interaction = await db.user_ai_interactions.find_one({"input.session_id": clarification_request.session_id}, sort=[("timestamp", -1)])
-        if not last_interaction:
-            logger.error(f"Session not found: {clarification_request.session_id}")
-            raise HTTPException(status_code=404, detail="Interview session not found")
-        user_id = last_interaction["user_id"]
-        interactions = await fetch_interactions_for_session(user_id, clarification_request.session_id)
-        if not interactions:
-            logger.error(f"Session not found: {clarification_request.session_id}")
-            raise HTTPException(status_code=404, detail="Interview session not found")
-        # Rebuild session_data as needed for clarification
-        # ... (similar to answer logic) ...
-        # Use the latest question for clarification
-        last_question = None
-        for inter in reversed(interactions):
-            resp = inter.get("ai_response", {})
-            meta = inter.get("meta", {})
-            if meta.get("step") == "answer" and not meta.get("clarification", False):
-                last_question = resp.get("question")
-                break
-        if not last_question:
-            raise HTTPException(status_code=404, detail="No main question found")
-        clarification_resp = await get_clarification(last_question, clarification_request.question)
-        # Save the clarification interaction
-        try:
-            await save_user_ai_interaction(
-                user_id=user_id,
-                endpoint="mock_interview",
-                input_data=clarification_request.dict(),
-                ai_response={"clarification": clarification_resp},
-                meta={"step": "answer", "clarification": True}
-            )
-        except Exception as e:
-            logger.warning(f"Failed to save user-AI interaction: {e}")
-        return {"clarification": clarification_resp}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error processing clarification request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/user/interactions/{user_id}")

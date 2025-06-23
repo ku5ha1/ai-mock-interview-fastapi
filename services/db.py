@@ -750,4 +750,19 @@ async def get_user_name_from_history(user_id: str) -> str:
     except Exception as e:
         logger.error(f"Error getting user name from history: {str(e)}", exc_info=True)
         return "Candidate"
+
+async def get_user_name_from_id(user_id: str) -> str:
+    db = await get_db()
+    try:
+        from bson import ObjectId
+        try:
+            object_id = ObjectId(user_id)
+            user = await db.users.find_one({"_id": object_id})
+        except:
+            user = await db.users.find_one({"_id": user_id})
+        if user and "name" in user:
+            return user["name"]
+        return ""
+    except Exception:
+        return ""
  
