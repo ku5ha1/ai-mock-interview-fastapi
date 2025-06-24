@@ -25,17 +25,64 @@ class ApproachAnalysisService:
             return ""
 
     @retry_with_backoff
-    async def analyze_approach(self, question: str, user_answer: str, user_name: str = None) -> Dict[str, Any]:
+    async def analyze_approach(self, question: str, user_answer: str, user_name: str = None, previous_attempt: dict = None, personalized_guidance: str = None, user_patterns: Any = None) -> Dict[str, Any]:
         try:
             # Get relevant context from RAG
             context = await self._get_context(question)
 
+            # Enhanced personalization context
+            extra_context = ""
+            if previous_attempt:
+                extra_context += f"The candidate previously attempted this question. Their answer was: {previous_attempt.get('answer', '')}. The result was: {previous_attempt.get('result', '')}. The output was: {previous_attempt.get('output', '')}. Please naturally incorporate this information into your feedback, comparing the current and previous attempts if relevant.\n"
+            
+            # Enhanced personalization context
+            if personalized_guidance or user_patterns:
+                extra_context += "PERSONALIZATION CONTEXT - Use this to tailor your feedback specifically to this candidate:\n"
+                
+                if user_patterns:
+                    patterns = user_patterns
+                    extra_context += f"- Performance: Average score {patterns.get('average_score', 'N/A')}/10, {patterns.get('completion_rate', 0)*100:.0f}% session completion rate\n"
+                    extra_context += f"- Recent topics: {', '.join(patterns.get('recent_topics', []))}\n"
+                    extra_context += f"- Performance trend (last 5): {patterns.get('performance_trend', [])}\n"
+                    
+                    # Topic-specific performance
+                    if patterns.get('topic_specific_performance'):
+                        topic_perf = patterns['topic_specific_performance']
+                        if topic_perf.get('scores'):
+                            avg_topic = sum(topic_perf['scores']) / len(topic_perf['scores'])
+                            extra_context += f"- Topic-specific average: {avg_topic:.1f}/10\n"
+                    
+                    # Question-specific history
+                    if patterns.get('question_specific_history'):
+                        q_history = patterns['question_specific_history']
+                        extra_context += f"- Previous attempt at this question: Result {q_history.get('previous_result', 'N/A')}\n"
+                    
+                    if patterns.get('strengths'):
+                        extra_context += f"- Demonstrated strengths: {', '.join(patterns['strengths'][:3])}\n"
+                    
+                    if patterns.get('common_weaknesses'):
+                        extra_context += f"- Areas needing improvement: {', '.join(patterns['common_weaknesses'][:3])}\n"
+                    
+                    # Response patterns
+                    avg_length = patterns.get('avg_response_length', 0)
+                    if avg_length > 0:
+                        extra_context += f"- Average response length: {avg_length:.0f} words\n"
+                
+            if personalized_guidance:
+                # Clean up the personalized guidance to be more concise
+                guidance = personalized_guidance.replace("You often struggle with:", "Areas for improvement:").replace("Your strengths include:", "Strengths:").replace("Keep leveraging these in your answers.", "")
+                extra_context += f"- Personalized guidance: {guidance}\n"
+
+            extra_context += "IMPORTANT: Reference these patterns in your feedback. Connect current performance to past trends. Be specific about how they're improving or repeating patterns. Use the performance trend and topic-specific data to provide targeted advice.\n\n"
+
             # Build final prompt with or without context
             name_reference = f"{user_name}" if user_name else "the candidate"
             prompt = f"""
-You are an expert data science and AI interviewer. You specialize in conducting technical interviews for data science, analytics, and ML roles at companies like Meta, Google, Airbnb, and Stripe.
+You are an expert data science and AI interviewer evaluating {name_reference}'s approach to a technical question.
 
-Your task is to evaluate a candidate's written approach to a data science interview-style question. This is NOT about writing perfect code, but about assessing the candidate's high-level thinking, clarity, structure, and analytical depth.
+{extra_context}
+
+IMPORTANT: Use the personalization data above to tailor your feedback specifically to this candidate's demonstrated patterns, strengths, and weaknesses. Reference their performance history and learning patterns throughout your evaluation.
 
 The goal is to simulate the feedback they'd get from a top-tier interviewer. Your feedback should reflect how they would be judged in a real technical interview.
 
@@ -86,23 +133,27 @@ Current Question Info:
 
 ---
 
-Candidate's Prior Feedback (Last 30 Days):  
-Only refer to this if directly relevant to what the candidate said.
-
-[Insert relevant prior feedback here if available]
-
----
-
 Generate the 6 sections. Do not explain them. Keep it sharp, honest, and professional—like a real interviewer giving expert-level critique.
 
 Context:
 {context}
+
+---
+
+Return ONLY valid JSON in the following format:
+{{
+    "feedback": "...",
+    "strengths": [...],
+    "areas_for_improvement": [...],
+    "score": number
+}}
+DO NOT return markdown, explanations, or any text outside the JSON object.
 """
 
             response = await self.client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
-                    {"role": "system", "content": f"You are an expert interviewer providing intelligent, contextual feedback for {name_reference}. Focus on specific insights related to the current question and answer, avoiding generic or templated responses."},
+                    {"role": "system", "content": f"You are an expert interviewer providing intelligent, contextual feedback for {name_reference}. CRITICAL: You must use the provided personalization data to tailor your feedback. Reference their specific strengths, weaknesses, and performance patterns throughout your evaluation. Connect current performance to their learning history. This is not optional - it's essential for providing truly personalized feedback."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,

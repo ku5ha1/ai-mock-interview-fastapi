@@ -3,7 +3,7 @@ from services.db import (
     fetch_interactions_for_session, fetch_user_history, get_db, fetch_base_question, get_available_topics, save_user_ai_interaction, validate_user_id, 
     create_interview_session, get_interview_session, update_interview_session_answer,
     add_follow_up_question, transition_to_coding_phase, save_interview_feedback,
-    get_user_interview_sessions, get_personalized_context, get_user_name_from_id
+    get_user_interview_sessions, get_personalized_context, get_user_name_from_id, get_enhanced_personalized_context
 )
 from services.llm.interview import get_next_question
 from services.llm.feedback import get_feedback
@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from services.rag.retriever_factory import get_rag_retriever
 from bson import ObjectId
+from services.llm.utils import check_question_answered_by_id, generate_clarification_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,8 @@ async def init_interview(init_data: InterviewInit):
                 topic=init_data.topic,
                 user_name=user_name,
                 base_question_data=base_question_data,
-                first_follow_up=first_follow_up
+                first_follow_up=first_follow_up,
+                base_question_id=str(base_question_data["_id"])
             )
             logger.info(f"Successfully created interview session: {session_id}")
         except Exception as e:
@@ -58,7 +60,8 @@ async def init_interview(init_data: InterviewInit):
             "code_stub": base_question_data["code_stub"],
             "tags": base_question_data["tags"],
             "language": base_question_data["language"],
-            "first_follow_up": first_follow_up
+            "first_follow_up": first_follow_up,
+            "base_question_id": str(base_question_data["_id"])
         }
         return response
     except HTTPException:
@@ -131,8 +134,12 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
         )
 
         if quality == "bad":
+            feedback_message = await generate_clarification_feedback(
+                last_answered_question["question"],
+                last_answered_question.get("answer", "")
+            )
             return {
-                "question": f"{last_answered_question['question']}\n\nYour answer seems unclear or irrelevant. Could you please try again?",
+                "question": feedback_message,
                 "ready_to_code": False,
                 "language": session["ai_response"]["language"]
             }
@@ -196,13 +203,34 @@ async def get_interview_feedback(session_id: str):
             raise HTTPException(status_code=404, detail="Interview session not found")
         
         session_data = session["meta"]["session_data"]
+
+        user_name = await get_user_name_from_id(str(session["user_id"]))
+        if not user_name:
+            logger.warning(f"User name not found for user_id: {session['user_id']}, using default")
+            user_name = "User"
+        session_data["user_name"] = user_name
         
         # Check if feedback already exists
         if session_data.get("feedback"):
             return session_data["feedback"]
         
-        # Get personalized context based on user's previous interactions
-        personalized_context = await get_personalized_context(session["user_id"], session_data["topic"], session_data["user_name"])
+        # --- Progress API check ---
+        base_question_id = session_data.get("base_question_id")
+        progress_data = None
+        if base_question_id:
+            progress_data = await check_question_answered_by_id(str(session["user_id"]), base_question_id)
+        
+        # Get enhanced personalized context based on user's previous interactions and progress data
+        personalized_context = await get_enhanced_personalized_context(
+            session["user_id"], 
+            session_data["topic"], 
+            session_data.get("base_question_id"),
+            session_data["user_name"]
+        )
+        
+        # Log personalized context for debugging
+        logger.info(f"personalized_guidance: {personalized_context['personalized_guidance']}")
+        logger.info(f"user_patterns: {personalized_context['user_patterns']}")
         
         # Prepare conversation for feedback generation
         conversation = []
@@ -233,14 +261,22 @@ async def get_interview_feedback(session_id: str):
             raise HTTPException(status_code=404, detail="No conversation found for this session")
         
         # Generate feedback with personalized context
-        feedback_data = await get_feedback(conversation, session_data["user_name"])
+        feedback_data = await get_feedback(
+            conversation,
+            session_data["user_name"],
+            previous_attempt=None,
+            personalized_guidance=personalized_context["personalized_guidance"] if personalized_context["personalized_guidance"] else None,
+            user_patterns=personalized_context["user_patterns"] if "user_patterns" in personalized_context else None
+        )
         
-        # Add personalized insights to feedback
-        if personalized_context["personalized_guidance"]:
-            if "summary" in feedback_data:
-                feedback_data["summary"] += f"\n\nPersonalized Guidance: {personalized_context['personalized_guidance']}"
-            else:
-                feedback_data["personalized_guidance"] = personalized_context["personalized_guidance"]
+        # If progress API says already answered, add info to feedback
+        previous_attempt = None
+        if progress_data and progress_data.get("success"):
+            previous_attempt = {
+                "answer": progress_data["data"].get("answer", ""),
+                "result": progress_data["data"].get("finalResult", None),
+                "output": progress_data["data"].get("output", "")
+            }
         
         # Create full feedback data for database storage (includes user patterns)
         full_feedback_data = feedback_data.copy()
@@ -253,6 +289,8 @@ async def get_interview_feedback(session_id: str):
             "points_to_address": feedback_data.get("points_to_address", []),
             "areas_for_improvement": feedback_data.get("areas_for_improvement", [])
         }
+        if previous_attempt:
+            documented_response["previous_attempt"] = previous_attempt
         
         # Save full feedback data to session (includes user patterns)
         await save_interview_feedback(session_id, full_feedback_data)
@@ -356,4 +394,29 @@ async def get_user_session_detail(user_id: str, session_id: str):
         raise
     except Exception as e:
         logger.error(f"Error getting session detail: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/user/patterns/{user_id}")
+async def get_user_patterns(user_id: str):
+    """Get enhanced user patterns data for debugging and analysis"""
+    try:
+        # Validate user_id
+        if not await validate_user_id(user_id):
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get enhanced personalized context
+        user_name = await get_user_name_from_id(user_id)
+        personalized_context = await get_enhanced_personalized_context(
+            user_id, 
+            user_name=user_name
+        )
+        
+        return {
+            "user_patterns": personalized_context["user_patterns"],
+            "personalized_guidance": personalized_context["personalized_guidance"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user patterns: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

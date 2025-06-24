@@ -1,6 +1,7 @@
 from services.llm.utils import MODEL_NAME, client, retry_with_backoff, safe_strip, get_fallback_optimized_code
 from typing import Union, Optional
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -102,117 +103,12 @@ MySQL:
 - Concurrency handling
  
 ## Output Format
- 
-### 1. Code Assessment
-- Current code quality score
-- Performance bottlenecks
-- Potential improvements
-- Compatibility status
- 
-### 2. Optimization Results
-If optimization needed:
-- Optimized code
-- Required dependencies
-- Version compatibility notes
-- Implementation notes
- 
-If no optimization needed:
-- Original code
-- Quality assessment
-- Best practices followed
- 
-### 3. Documentation
-- Optimization rationale
-- Performance impact
-- Trade-offs
-- Limitations
-- Testing recommendations
- 
-## Special Instructions
-1. Do not modify any code that already follows best practices
-2. Ensure 100% compatibility with the specified language version, platform, or environment
-3. Avoid experimental, unproven, or non-standard optimizations
-4. Maintain exact original functionality and behavior in all edge cases
-5. Provide clear reasoning for all changes
-6. Include version compatibility notes
-7. Document all dependencies
-##  Code Optimization Examples
-### Python Example 1: Loop-Based Summation
-Non-Optimized Code:
-total = 0
-for i in range(1, 1000001):
-    total += i
-print(total)
-Optimized Code:
-total = sum(range(1, 1000001))
-print(total)
-Optimization Technique: Utilized Python's built-in sum() function to replace the explicit loop, enhancing readability and performance.
+Return a JSON object in this format:
+{{
+    "optimized_code": "# Your optimized code here with comments explaining changes",
+    "optimization_summary": "A detailed summary of optimizations, changes, and improvements made to the code."
+}}
 
-### Python Example 2: Inefficient DataFrame Filtering
-Non-Optimized Code:
-import pandas as pd
-df = pd.read_csv('data.csv')
-filtered_df = df[df['value'] > 100]
-Optimized Code:
-import pandas as pd
-
-df = pd.read_csv('data.csv', usecols=['value'])
-filtered_df = df[df['value'] > 100]
-Optimization Technique: Specified usecols parameter in read_csv to load only necessary columns, reducing memory usage and improving load time.
-
-###  SQL Example 1: Redundant Subquery
-Non-Optimized Query:
-SELECT name
-FROM employees
-WHERE department_id IN (
-    SELECT department_id
-    FROM departments
-    WHERE location = 'New York'
-);
-Optimized Query:
-
-SELECT e.name
-FROM employees e
-JOIN departments d ON e.department_id = d.department_id
-WHERE d.location = 'New York';
-Optimization Technique: Replaced subquery with a JOIN to leverage relational indices, improving query performance.
-
-###  SQL Example 2: Function on Indexed Column
-Non-Optimized Query:
-
-SELECT *
-FROM orders
-WHERE YEAR(order_date) = 2025;
-Optimized Query:
-SELECT *
-FROM orders
-WHERE order_date >= '2025-01-01' AND order_date < '2026-01-01';
-Optimization Technique: Avoided applying a function to the indexed order_date column to maintain index utilization, enhancing query efficiency. 
-
-## Response Format
-```json
-{
-   "assessment": {
-       "needs_optimization": boolean,
-       "quality_score": number,
-       "key_findings": [string]
-   },
-   "optimization": {
-       "code": string,
-       "dependencies": [string],
-       "version_notes": string,
-       "changes_made": [string]
-   },
-   "documentation": {
-       "rationale": string,
-       "performance_impact": string,
-       "trade_offs": [string],
-       "limitations": [string],
-       "testing_recommendations": [string]
-   }
-}
-```
- 
 ## Quality Checks
 1. Code must be 100% runnable
 2. All dependencies must be specified
@@ -236,6 +132,8 @@ Sample Input: {sample_input}
 Expected Output: {sample_output}
 User Code:
 {user_code}
+
+Return ONLY valid JSON matching the response format shown above. DO NOT return markdown, explanations, or any text outside the JSON object.
 """
         if rag_context:
             prompt += f"\nRelevant Context:\n{rag_context}\n"
@@ -243,7 +141,8 @@ User Code:
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
-            max_tokens=1000
+            max_tokens=1000,
+            response_format={"type": "json_object"}
         )
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
         return content or get_fallback_optimized_code()
@@ -296,15 +195,35 @@ async def generate_optimized_code_with_summary(
     rag_context: Optional[str] = None
 ) -> dict:
     try:
-        optimized_code = await generate_optimized_code(
+        optimized_json = await generate_optimized_code(
             question=question,
             user_code=user_code,
             sample_input=sample_input,
             sample_output=sample_output,
             rag_context=rag_context
         )
-        summary = await generate_optimization_summary(user_code, optimized_code, question)
-        return {"optimized_code": optimized_code, "optimization_summary": summary}
+        # If the LLM returns a string, try to parse as JSON
+        if isinstance(optimized_json, str):
+            try:
+                optimized_json = json.loads(optimized_json)
+            except Exception as e:
+                logger.error(f"Failed to parse JSON response: {str(e)}")
+                return {
+                    "optimized_code": "# Error: Could not optimize code.",
+                    "optimization_summary": "Could not parse optimization result."
+                }
+        
+        # Extract the required fields
+        optimized_code = optimized_json.get("optimized_code", "# Error: Could not optimize code.")
+        optimization_summary = optimized_json.get("optimization_summary", "No summary available.")
+        
+        return {
+            "optimized_code": optimized_code,
+            "optimization_summary": optimization_summary
+        }
     except Exception as e:
         logger.error(f"Error in optimized code with summary: {str(e)}")
-        return {"optimized_code": get_fallback_optimized_code(), "optimization_summary": "No summary available."}
+        return {
+            "optimized_code": get_fallback_optimized_code(),
+            "optimization_summary": "No summary available."
+        }

@@ -27,6 +27,10 @@ ENV/
 # Environment variables
 .env
 
+package/
+lambda_deploy.zip
+deployment_package
+Dockerfile
 # IDE
 .idea/
 .vscode/

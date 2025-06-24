@@ -8,6 +8,7 @@ import asyncio
 import json
 import tiktoken
 from dotenv import load_dotenv
+import httpx
 load_dotenv()
 
 TOKEN_LIMIT = 8192
@@ -26,6 +27,8 @@ logger.info("Shared OpenAI client initialized")
 
 # === Model Name ===
 MODEL_NAME = "gpt-4o-mini"
+
+PROGRESS_API_BASE_URL = os.getenv("PROGRESS_API_BASE_URL")
 
 def get_token_count(text: str, model: str = "cl100k_base") -> int:
     encoding = tiktoken.get_encoding(model)
@@ -104,3 +107,53 @@ def get_fallback_analysis() -> dict:
         "areas_for_improvement": ["Could not analyze"],
         "score": 0
     }
+
+async def check_question_answered_by_id(user_id: str, question_bank_id: str) -> dict:
+    url = f"{PROGRESS_API_BASE_URL.rstrip('/')}/mainQuestionBankProgress/checkQuestionAnsweredbyId"
+    
+    # Convert ObjectId to string if needed
+    if hasattr(question_bank_id, '__str__'):
+        question_bank_id = str(question_bank_id)
+    if hasattr(user_id, '__str__'):
+        user_id = str(user_id)
+    
+    payload = {"userId": user_id, "questionBankId": question_bank_id}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.error(f"Progress API call failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@retry_with_backoff
+async def generate_clarification_feedback(question: str, answer: str) -> str:
+    """
+    Generate a clarification or follow-up prompt in the style of an interviewer, not a helper or tutor.
+    """
+    prompt = f"""
+You are a technical interviewer. The candidate's answer to the following question was unclear, incomplete, or off-topic.
+
+Question: {question}
+Candidate's answer: {answer}
+
+As an interviewer, point out what was missing or unclear in the answer and ask a direct, probing follow-up question. Do not thank the candidate, do not encourage them to try again, and do not use phrases like 'I encourage you' or 'Thank you for your response.' Keep your tone professional, neutral, and focused on clarifying or probing further. Respond as you would in a real interview.
+
+Your response should be a single, direct follow-up or clarification question or statement.
+"""
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "You are a technical interviewer."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=150
+        )
+        content = safe_strip(getattr(response.choices[0].message, 'content', None))
+        return content or "Your previous answer did not address the question clearly. Please try again, focusing on the specifics asked."
+    except Exception as e:
+        logger.error(f"Error generating clarification feedback: {str(e)}")
+        return "Your previous answer did not address the question clearly. Please try again, focusing on the specifics asked."
