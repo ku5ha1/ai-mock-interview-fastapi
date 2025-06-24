@@ -18,7 +18,7 @@ from services.llm.utils import check_question_answered_by_id, generate_clarifica
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/mock", tags=["Mock Interview"])
+router = APIRouter(tags=["Mock Interview"])
 
 @router.post("/init")
 async def init_interview(init_data: InterviewInit):

@@ -5,7 +5,7 @@ from services.db import validate_user_id, save_user_ai_interaction, get_personal
 from services.llm.utils import check_question_answered_by_id
 import logging
 
-router = APIRouter(prefix="/approach", tags=["Approach Analysis"])
+router = APIRouter(tags=["Approach Analysis"])
 
 analysis_service = ApproachAnalysisService()
 

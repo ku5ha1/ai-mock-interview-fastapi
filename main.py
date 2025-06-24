@@ -112,7 +112,7 @@ async def startup_event():
         if IS_LAMBDA:
             raise
 
-app.include_router(mock_interview_router, prefix="/mock-interview")
+app.include_router(mock_interview_router, prefix="/mock")
 app.include_router(code_optimization_router, prefix="/code")
 app.include_router(approach_analysis_router, prefix="/approach")
 app.include_router(rag_router)

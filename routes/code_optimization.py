@@ -4,7 +4,7 @@ from models.schemas import CodeOptimizationRequest
 from services.rag.retriever_factory import get_rag_retriever
 from services.db import validate_user_id, save_user_ai_interaction
 
-router = APIRouter(prefix="/code", tags=["Code Optimization"])
+router = APIRouter(tags=["Code Optimization"])
 
 @router.post("/optimize-code")
 async def optimize_code(request: CodeOptimizationRequest):
