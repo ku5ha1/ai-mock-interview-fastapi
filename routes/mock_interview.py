@@ -192,6 +192,26 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
         logger.error(f"Error submitting answer: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+def ensure_feedback_fields(feedback, base_question):
+    # Always set base_question
+    feedback['base_question'] = base_question or "No base question available."
+    # Always set summary
+    feedback['summary'] = feedback.get('summary') or "No summary provided."
+    # Always set positive_points
+    if not feedback.get('positive_points') or not isinstance(feedback['positive_points'], list) or len(feedback['positive_points']) == 0:
+        feedback['positive_points'] = ["No clear strengths were demonstrated in this interview."]
+    # Always set points_to_address
+    if not feedback.get('points_to_address') or not isinstance(feedback['points_to_address'], list) or len(feedback['points_to_address']) == 0:
+        feedback['points_to_address'] = ["No specific points to address were identified."]
+    # Always set areas_for_improvement
+    if not feedback.get('areas_for_improvement') or not isinstance(feedback['areas_for_improvement'], list) or len(feedback['areas_for_improvement']) == 0:
+        feedback['areas_for_improvement'] = ["No areas for improvement were identified."]
+    # Always set metrics with required keys
+    metrics = feedback.get('metrics', {})
+    metrics['technical_skills'] = metrics.get('technical_skills', "No data available.")
+    metrics['communication_skills'] = metrics.get('communication_skills', "No data available.")
+    feedback['metrics'] = metrics
+    return feedback
 
 @router.get("/feedback/{session_id}")
 async def get_interview_feedback(session_id: str):
@@ -215,6 +235,8 @@ async def get_interview_feedback(session_id: str):
             feedback = session_data["feedback"]
             if "base_question" not in feedback and session_data.get("questions"):
                 feedback["base_question"] = session_data["questions"][0].get("question")
+            # Ensure all required fields are present
+            feedback = ensure_feedback_fields(feedback, session_data["questions"][0].get("question") if session_data.get("questions") else None)
             return feedback
         
         # --- Progress API check ---
@@ -301,6 +323,9 @@ async def get_interview_feedback(session_id: str):
         # Add base question to the feedback response
         if session_data.get("questions"):
             full_feedback_data["base_question"] = session_data["questions"][0].get("question")
+        
+        # Ensure all required fields are present
+        full_feedback_data = ensure_feedback_fields(full_feedback_data, session_data["questions"][0].get("question") if session_data.get("questions") else None)
         
         return full_feedback_data
     except HTTPException:
