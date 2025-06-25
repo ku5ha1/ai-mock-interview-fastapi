@@ -27,7 +27,7 @@ class ApproachAnalysisRequest(BaseModel):
     question: str
     user_answer: str
     user_id: str
-    question_id: str = None  # Optional, for progress checks
+    question_id: str = None  # type: ignore # Optional, for progress checks
 
 class CodeOptimizationRequest(BaseModel):
     question: str

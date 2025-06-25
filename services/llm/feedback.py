@@ -67,7 +67,8 @@ async def get_feedback(conversation: List[Dict[str, Any]], user_name: str, previ
                 "summary": f"{user_name}, your responses were unclear, incomplete, or did not address the questions. Please review the basics and try to provide more relevant, structured answers.",
                 "positive_points": [],
                 "points_to_address": ["Most answers were missing, irrelevant, or nonsensical."],
-                "areas_for_improvement": ["Focus on understanding the question and providing clear, relevant responses."]
+                "areas_for_improvement": ["Focus on understanding the question and providing clear, relevant responses."],
+                "metrics": {}
             }
 
         prompt = f"""
@@ -95,6 +96,7 @@ Include:
 - Positive Points (specific strengths demonstrated in this interview, if any)
 - Points to Address (specific areas from this interview that need improvement)
 - Areas for Improvement (broader areas relevant to this interview topic)
+- Metrics (a dictionary of key performance indicators, comparing to past performance if available. For example: {{"technical_skills": "improved by 15%", "communication": "consistent"}})
 
 Conversation:
 {formatted}
@@ -104,7 +106,8 @@ Return only valid JSON with structure:
     "summary": "...",
     "positive_points": [...],
     "points_to_address": [...],
-    "areas_for_improvement": [...]
+    "areas_for_improvement": [...],
+    "metrics": {{...}}
 }}
 """
 
@@ -120,7 +123,14 @@ Return only valid JSON with structure:
         )
 
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
-        return parse_json_response(content, get_fallback_feedback(user_name))
+        
+        parsed_response = parse_json_response(content, get_fallback_feedback(user_name))
+        
+        # Ensure 'metrics' field is always present
+        if 'metrics' not in parsed_response:
+            parsed_response['metrics'] = {}
+            
+        return parsed_response
 
     except Exception as e:
         logger.error(f"Error getting feedback: {str(e)}")

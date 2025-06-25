@@ -212,7 +212,10 @@ async def get_interview_feedback(session_id: str):
         
         # Check if feedback already exists
         if session_data.get("feedback"):
-            return session_data["feedback"]
+            feedback = session_data["feedback"]
+            if "base_question" not in feedback and session_data.get("questions"):
+                feedback["base_question"] = session_data["questions"][0].get("question")
+            return feedback
         
         # --- Progress API check ---
         base_question_id = session_data.get("base_question_id")
@@ -295,7 +298,11 @@ async def get_interview_feedback(session_id: str):
         # Save full feedback data to session (includes user patterns)
         await save_interview_feedback(session_id, full_feedback_data)
         
-        return documented_response
+        # Add base question to the feedback response
+        if session_data.get("questions"):
+            full_feedback_data["base_question"] = session_data["questions"][0].get("question")
+        
+        return full_feedback_data
     except HTTPException:
         raise
     except Exception as e:

@@ -125,7 +125,7 @@ async def health_check():
     """
     try:
         db = await get_db()
-        await db.command("ping")
+        await db.command("ping") # type: ignore
         
         try:
             from services.rag.retriever_factory import get_retriever_status

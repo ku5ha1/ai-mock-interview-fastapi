@@ -97,7 +97,8 @@ def get_fallback_feedback(user_name: str = "Candidate") -> dict:
         "summary": f"{user_name}, we encountered an issue generating feedback.",
         "positive_points": [],
         "points_to_address": ["System error"],
-        "areas_for_improvement": ["Try again later"]
+        "areas_for_improvement": ["Try again later"],
+        "metrics": {}
     }
 
 def get_fallback_analysis() -> dict:

@@ -30,7 +30,7 @@ async def analyze_approach(request: ApproachAnalysisRequest):
         personalized_context = await get_enhanced_personalized_context(
             request.user_id, 
             user_name=user_name,
-            question_id=getattr(request, "question_id", None)
+            question_id=getattr(request, "question_id", None) # type: ignore
         )
         
         # Log personalized context for debugging
