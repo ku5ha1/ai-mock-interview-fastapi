@@ -101,6 +101,113 @@ async def get_available_topics():
         logger.error(f"Error getting available topics: {str(e)}", exc_info=True)
         return []
 
+async def fetch_question_by_module(module_code: str):
+    """
+    Fetch a random question for a specific module from mainquestionbanks.
+    Returns randomly selected question with metadata for interviews.
+    Filters by module_code and isAvailableForMock = True.
+    """
+    try:
+        db = await get_db()
+        logger.info(f"Fetching question for module: {module_code}")
+        
+        # Build aggregation pipeline for random question selection
+        pipeline = [
+            {
+                "$match": {
+                    "module_code": module_code,
+                    "isAvailableForMockInterview": True,
+                    "isDeleted": False
+                }
+            },
+            {"$sample": {"size": 1}}
+        ]
+
+        # Check available question count
+        count = await db.mainquestionbanks.count_documents({
+            "module_code": module_code,
+            "isAvailableForMockInterview": True,
+            "isDeleted": False
+        })
+        logger.info(f"Found {count} available questions for module '{module_code}'")
+
+        if count == 0:
+            logger.warning(f"No questions found for module '{module_code}' with isAvailableForMockInterview=True")
+            raise Exception(f"No questions found for module '{module_code}' with isAvailableForMockInterview=True")
+
+        # Execute aggregation pipeline
+        cursor = db.mainquestionbanks.aggregate(pipeline)
+        result = await cursor.to_list(length=1)
+
+        if not result:
+            logger.warning(f"No questions found for module '{module_code}'")
+            raise Exception(f"No questions found for module '{module_code}'")
+
+        question_doc = result[0]
+        logger.info(f"Fetched question: {question_doc.get('question', 'No question text')}")
+
+        # Return formatted question data
+        return {
+            "_id": str(question_doc.get("_id")),
+            "question": question_doc.get("question", ""),
+            "code_stub": question_doc.get("base_code", ""),
+            "language": question_doc.get("programming_language", ""),
+            "difficulty": question_doc.get("level", ""),
+            "example": question_doc.get("description", ""),
+            "tags": [t["topic_name"] for t in question_doc.get("topics", [])],
+            "module_code": question_doc.get("module_code", ""),
+            "topic_code": question_doc.get("topic_code", "")
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching question by module: {str(e)}", exc_info=True)
+        raise
+
+async def get_available_modules():
+    """
+    Get list of available modules for mock interviews.
+    Returns all unique module codes that have questions with isAvailableForMock=True.
+    """
+    try:
+        db = await get_db()
+        
+        # Get all unique module codes that have available questions
+        pipeline = [
+            {
+                "$match": {
+                    "isAvailableForMockInterview": True,
+                    "isDeleted": False
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$module_code",
+                    "question_count": {"$sum": 1}
+                }
+            },
+            {
+                "$sort": {"_id": 1}
+            }
+        ]
+        
+        modules = await db.mainquestionbanks.aggregate(pipeline).to_list(length=None)
+        
+        # Format the response
+        module_list = [
+            {
+                "module_code": module["_id"],
+                "question_count": module["question_count"]
+            }
+            for module in modules if module["_id"]
+        ]
+        
+        logger.info(f"Found {len(module_list)} available modules")
+        return module_list
+        
+    except Exception as e:
+        logger.error(f"Error getting available modules: {str(e)}", exc_info=True)
+        return []
+
 async def get_user_name_from_id(user_id: str) -> str:
     """
     Get user name from user ID.

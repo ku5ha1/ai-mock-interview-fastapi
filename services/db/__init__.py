@@ -42,7 +42,9 @@ from .personalization import (
 # Question bank functions
 from .question_bank import (
     fetch_base_question,
+    fetch_question_by_module,
     get_available_topics,
+    get_available_modules,
     get_user_name_from_id
 )
 
@@ -81,6 +83,8 @@ __all__ = [
     
     # Question bank
     "fetch_base_question",
+    "fetch_question_by_module",
     "get_available_topics",
+    "get_available_modules",
     "get_user_name_from_id"
 ] 

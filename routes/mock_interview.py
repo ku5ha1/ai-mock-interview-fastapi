@@ -10,7 +10,8 @@ from services.db import (
     fetch_interactions_for_session, fetch_user_history, get_db, fetch_base_question, get_available_topics, save_user_ai_interaction, validate_user_id, 
     create_interview_session, get_interview_session, update_interview_session_answer,
     add_follow_up_question, transition_to_coding_phase, save_interview_feedback,
-    get_user_interview_sessions, get_personalized_context, get_user_name_from_id, get_enhanced_personalized_context
+    get_user_interview_sessions, get_personalized_context, get_user_name_from_id, get_enhanced_personalized_context,
+    fetch_question_by_module, get_available_modules  # Add these new imports
 )
 from services.interview import get_next_question
 from services.llm.feedback import get_feedback
@@ -32,24 +33,27 @@ async def init_interview(init_data: InterviewInit):
     """
     Initialize a new mock interview session.
     Creates session with base question, generates first follow-up, and stores in database.
+    Uses module_code to fetch random questions.
     """
     if not await validate_user_id(init_data.user_id):
         raise HTTPException(status_code=404, detail="User not found")
     try:
         # Create unique session ID
-        session_id = f"{init_data.user_id}_{init_data.topic}_{datetime.now().timestamp()}"
-        base_question_data = await fetch_base_question(init_data.topic)
+        session_id = f"{init_data.user_id}_{init_data.module_code}_{datetime.now().timestamp()}"
+        
+        # Fetch question by module code
+        base_question_data = await fetch_question_by_module(init_data.module_code)
         
         # Get RAG context for better question generation
         retriever = await get_rag_retriever()
         rag_context = ""
         if retriever is not None:
-            context_chunks = await retriever.retrieve_context(init_data.topic)
+            context_chunks = await retriever.retrieve_context(init_data.module_code)
             rag_context = "\n\n".join(context_chunks)
         
         # Generate first follow-up question
         try:
-            first_follow_up = await get_next_question([], is_base_question=True, topic=init_data.topic, rag_context=rag_context)
+            first_follow_up = await get_next_question([], is_base_question=True, topic=init_data.module_code, rag_context=rag_context)
         except Exception as e:
             logger.error(f"Error generating follow-up question: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error generating follow-up question: {str(e)}")
@@ -60,7 +64,7 @@ async def init_interview(init_data: InterviewInit):
             await create_interview_session(
                 user_id=init_data.user_id,
                 session_id=session_id,
-                topic=init_data.topic,
+                topic=init_data.module_code,  # Store module_code as topic for backward compatibility
                 user_name=user_name,
                 base_question_data=base_question_data,
                 first_follow_up=first_follow_up,
@@ -81,7 +85,9 @@ async def init_interview(init_data: InterviewInit):
             "tags": base_question_data["tags"],
             "language": base_question_data["language"],
             "first_follow_up": first_follow_up,
-            "base_question_id": str(base_question_data["_id"])
+            "base_question_id": str(base_question_data["_id"]),
+            "module_code": base_question_data.get("module_code", ""),
+            "topic_code": base_question_data.get("topic_code", "")
         }
         return response
     except HTTPException:
@@ -357,6 +363,19 @@ async def get_topics():
         return {"topics": topics}
     except Exception as e:
         logger.error(f"Error getting topics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/modules")
+async def get_modules():
+    """
+    Get all available modules for mock interviews.
+    Returns list of modules with question counts that users can select for mock interviews.
+    """
+    try:
+        modules = await get_available_modules()
+        return {"modules": modules}
+    except Exception as e:
+        logger.error(f"Error getting modules: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/user/interactions/{user_id}")

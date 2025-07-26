@@ -31,6 +31,8 @@ httpx==0.24.1
 # AWS Lambda deployment (if needed)
 mangum==0.17.0
 
+# python -m spacy download en_core_web_sm   -> spacy model
+
 # Core Python dependencies (usually included with Python)
 # These are listed for completeness but may not need explicit installation:
 # - asyncio (built-in)

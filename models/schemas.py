@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 class InterviewInit(BaseModel):
     """
     Request model for initializing a new mock interview session.
-    Contains topic selection and user identification.
+    Contains module_code selection and user identification.
     """
-    topic: str
+    module_code: str  # Changed from 'topic' to 'module_code' for clarity
     user_id: str
 
 class InterviewResponse(BaseModel):
