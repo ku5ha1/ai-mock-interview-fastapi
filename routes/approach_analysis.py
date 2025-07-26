@@ -22,8 +22,10 @@ async def analyze_approach(request: ApproachAnalysisRequest):
     Analyze user's approach to a question and provide structured feedback.
     Uses personalized context to give tailored recommendations.
     """
+    logger = logging.getLogger(__name__)
     # Validate user exists
     if not await validate_user_id(request.user_id):
+        logger.error(f"User not found: user_id={request.user_id}")
         raise HTTPException(status_code=404, detail="User not found")
     try:
         # Get user name for personalized feedback
@@ -42,7 +44,6 @@ async def analyze_approach(request: ApproachAnalysisRequest):
         )
         
         # Log context for debugging
-        logger = logging.getLogger(__name__)
         logger.info(f"personalized_guidance: {personalized_context['personalized_guidance']}")
         logger.info(f"user_patterns: {personalized_context['user_patterns']}")
         
@@ -89,8 +90,9 @@ async def analyze_approach(request: ApproachAnalysisRequest):
                 ai_response=full_result  # Save full result with user_patterns
             )
         except Exception as e:
-            print(f"Failed to save user-AI interaction: {e}")
+            logger.error(f"Failed to save user-AI interaction for user_id={request.user_id}: {e}", exc_info=True)
         
         return documented_response  # Return only documented fields
     except Exception as e:
+        logger.error(f"Error analyzing approach for user_id={request.user_id}, question_id={getattr(request, 'question_id', None)}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error analyzing approach: {str(e)}")

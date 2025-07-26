@@ -18,7 +18,8 @@ async def generate_optimized_code(
     user_code: str,
     sample_input: str,
     sample_output: str,
-    rag_context: Optional[str] = None
+    rag_context: Optional[str] = None,
+    model: str = MODEL_NAME
 ) -> str:
     """
     Generate optimized version of user's code.
@@ -137,6 +138,14 @@ Return a JSON object in this format:
 5. Version compatibility required
 6. No library suggestions without verification
 
+## CRITICAL: Code Output Requirements
+- The "optimized_code" value MUST contain ONLY executable code
+- DO NOT include any comments, explanations, docstrings, or markdown in the code
+- DO NOT include "#" comment lines in the code
+- DO NOT include triple-quoted strings (''' or \"""\") in the code
+- The code must be immediately runnable without any preprocessing
+- If you need to explain changes, put them ONLY in the "optimization_summary" field
+
 # Input
 Question Context: {question}
 Sample Input: {sample_input}
@@ -144,12 +153,12 @@ Expected Output: {sample_output}
 User Code:
 {user_code}
 
-Return ONLY valid JSON matching the response format shown above. DO NOT return markdown, explanations, or any text outside the JSON object.
+Return ONLY valid JSON matching the response format shown above. The "optimized_code" field must contain ONLY executable code without any comments or explanations. DO NOT return markdown, explanations, or any text outside the JSON object.
 """
         if rag_context:
             prompt += f"\nRelevant Context:\n{rag_context}\n"
         response = await client.chat.completions.create(
-            model=MODEL_NAME,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=1000,
@@ -204,7 +213,8 @@ async def generate_optimized_code_with_summary(
     user_code: str,
     sample_input: str,
     sample_output: str,
-    rag_context: Optional[str] = None
+    rag_context: Optional[str] = None,
+    model: str = MODEL_NAME
 ) -> dict:
     """
     Generate optimized code with detailed summary.
@@ -216,7 +226,8 @@ async def generate_optimized_code_with_summary(
             user_code=user_code,
             sample_input=sample_input,
             sample_output=sample_output,
-            rag_context=rag_context
+            rag_context=rag_context,
+            model=model
         )
         # If the LLM returns a string, try to parse as JSON
         if isinstance(optimized_json, str):

@@ -53,18 +53,16 @@ async def check_single_answer_quality(question: str, answer: str, topic: str, ra
     """
     Assess quality of a single interview answer.
     Uses RAG context for domain-specific evaluation.
+    Less strict: Accepts reasonable attempts as 'good', only marks 'bad' if answer is empty, irrelevant, or nonsensical.
     """
     try:
         prompt = f"""
 Review the following answer to the {topic} interview question.
 Evaluate based on:
-- Clarity of communication and reasoning
-- Correctness of logic and approach
-- Ability to reason under pressure
-- Awareness of trade-offs and edge cases
-- Domain-specific technical knowledge
+- Is the answer relevant to the question?
+- Does it make a reasonable attempt to address the question?
 
-Respond with only 'good' if the answer demonstrates clear reasoning, relevant technical knowledge, and addresses the question appropriately, or 'bad' if it is gibberish, empty, irrelevant, or lacks coherent reasoning.
+Respond with only 'good' if the answer is relevant and makes a reasonable attempt to address the question, even if it is not perfect. Only respond with 'bad' if the answer is completely irrelevant, empty, or nonsensical.
 
 Question: {question}
 Answer: {answer}

@@ -105,7 +105,8 @@ async def fetch_question_by_module(module_code: str):
     """
     Fetch a random question for a specific module from mainquestionbanks.
     Returns randomly selected question with metadata for interviews.
-    Filters by module_code and isAvailableForMock = True.
+    Filters by module_code and isAvailableForMock = True or isAvailableForMockInterview = True.
+    Enhanced error logging for missing data.
     """
     try:
         db = await get_db()
@@ -116,7 +117,10 @@ async def fetch_question_by_module(module_code: str):
             {
                 "$match": {
                     "module_code": module_code,
-                    "isAvailableForMockInterview": True,
+                    "$or": [
+                        {"isAvailableForMock": True},
+                        {"isAvailableForMockInterview": True}
+                    ],
                     "isDeleted": False
                 }
             },
@@ -126,22 +130,25 @@ async def fetch_question_by_module(module_code: str):
         # Check available question count
         count = await db.mainquestionbanks.count_documents({
             "module_code": module_code,
-            "isAvailableForMockInterview": True,
+            "$or": [
+                {"isAvailableForMock": True},
+                {"isAvailableForMockInterview": True}
+            ],
             "isDeleted": False
         })
-        logger.info(f"Found {count} available questions for module '{module_code}'")
+        logger.info(f"Found {count} available questions for module '{module_code}' (isAvailableForMock/Interview, isDeleted=False)")
 
         if count == 0:
-            logger.warning(f"No questions found for module '{module_code}' with isAvailableForMockInterview=True")
-            raise Exception(f"No questions found for module '{module_code}' with isAvailableForMockInterview=True")
+            logger.error(f"NO QUESTIONS FOUND: No questions found for module_code='{module_code}' with isAvailableForMock=True or isAvailableForMockInterview=True and isDeleted=False.\nCheck if the data exists and is correctly flagged in the database.")
+            raise Exception(f"No questions found for module '{module_code}' with isAvailableForMock=True or isAvailableForMockInterview=True")
 
         # Execute aggregation pipeline
         cursor = db.mainquestionbanks.aggregate(pipeline)
         result = await cursor.to_list(length=1)
 
         if not result:
-            logger.warning(f"No questions found for module '{module_code}'")
-            raise Exception(f"No questions found for module '{module_code}'")
+            logger.error(f"NO QUESTIONS RETURNED: Aggregation pipeline returned no results for module_code='{module_code}'. Pipeline: {pipeline}")
+            raise Exception(f"No questions found for module '{module_code}' (aggregation returned no results)")
 
         question_doc = result[0]
         logger.info(f"Fetched question: {question_doc.get('question', 'No question text')}")
@@ -160,13 +167,14 @@ async def fetch_question_by_module(module_code: str):
         }
 
     except Exception as e:
-        logger.error(f"Error fetching question by module: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching question by module: {str(e)} | module_code={module_code}", exc_info=True)
         raise
 
 async def get_available_modules():
     """
     Get list of available modules for mock interviews.
-    Returns all unique module codes that have questions with isAvailableForMock=True.
+    Returns all unique module codes that have questions with isAvailableForMock=True or isAvailableForMockInterview=True.
+    Enhanced error logging for missing data.
     """
     try:
         db = await get_db()
@@ -175,7 +183,10 @@ async def get_available_modules():
         pipeline = [
             {
                 "$match": {
-                    "isAvailableForMockInterview": True,
+                    "$or": [
+                        {"isAvailableForMock": True},
+                        {"isAvailableForMockInterview": True}
+                    ],
                     "isDeleted": False
                 }
             },
@@ -201,7 +212,9 @@ async def get_available_modules():
             for module in modules if module["_id"]
         ]
         
-        logger.info(f"Found {len(module_list)} available modules")
+        logger.info(f"Found {len(module_list)} available modules (isAvailableForMock/Interview, isDeleted=False)")
+        if not module_list:
+            logger.error("NO MODULES FOUND: No modules found with isAvailableForMock=True or isAvailableForMockInterview=True and isDeleted=False.\nCheck if the data exists and is correctly flagged in the database.")
         return module_list
         
     except Exception as e:

@@ -28,7 +28,7 @@ async def retrieve_context(question: str):
             "context_count": len(context)
         }
     except Exception as e:
-        logger.error(f"Error retrieving context: {str(e)}")
+        logger.error(f"Error retrieving context for question='{question}': {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error retrieving context: {str(e)}")
 
 @router.get("/status")
