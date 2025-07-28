@@ -160,8 +160,7 @@ Return ONLY valid JSON matching the response format shown above. The "optimized_
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=1000,
+            max_completion_tokens=1000,
             response_format={"type": "json_object"}
         )
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
