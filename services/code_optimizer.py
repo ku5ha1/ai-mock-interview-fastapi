@@ -27,148 +27,72 @@ async def generate_optimized_code(
     """
     try:
         prompt = f"""
-# Code Optimization Assistant for Data Roles
- 
-## Purpose
-You are an expert code optimization assistant specializing in data engineering, data science, and analytics. Your role is to analyze and optimize code submissions while maintaining 100% functionality and compatibility.
- 
-## Input Processing
-1. Code Analysis
-  - Language: Python or MySQL
-  - Context: Data engineering/science/analytics task
-  - Current performance metrics (if provided)
-  - Environment constraints (Python version, MySQL version)
- 
-2. Validation Steps
-  - Verify code compilability
-  - Check library compatibility
-  - Validate syntax correctness
-  - Ensure all imports/dependencies are available
-  - Confirm MySQL version compatibility
- 
-## Optimization Criteria
- 
-### 1. Code Correctness
-- Maintain exact output for all valid inputs
-- Preserve data integrity and type consistency
-- Keep business logic intact
-- Ensure backward compatibility
-- No breaking changes to existing functionality
- 
-### 2. Performance Optimization
-Python:
-- Time complexity reduction
-- Space complexity optimization
-- Memory usage optimization
-- Loop and iteration efficiency
-- Vectorization opportunities
-- Data structure optimization
- 
-MySQL:
-- Query execution plan optimization
-- Index utilization
-- JOIN efficiency
-- Subquery optimization
-- Transaction handling
-- Batch processing
- 
-### 3. Code Quality
-Python:
-- PEP 8 compliance
-- Type hints implementation
-- Error handling
-- Documentation
-- Variable naming
-- Code organization
- 
-MySQL:
-- SQL style guidelines
-- Naming conventions
-- Query structure
-- Comment clarity
-- Format consistency
- 
-### 4. Best Practices
-Python:
-- List/dict comprehensions
-- Built-in function usage
-- DRY principle adherence
-- Error handling patterns
-- Resource management
-- Logging implementation
- 
-MySQL:
-- Index strategy
-- JOIN optimization
-- Data type selection
-- Parameterized queries
-- Transaction management
-- Error handling
- 
-### 5. Scalability & Safety
-- Large dataset handling
-- Error handling
-- Input validation
-- Resource constraints
-- Logging
-- Performance monitoring
-- Concurrency handling
- 
-## Output Format
-Return a JSON object in this format:
+You are an expert code optimization assistant. Your task is to optimize the given code while maintaining 100% functionality.
+
+CRITICAL REQUIREMENTS:
+1. Return ONLY valid JSON with this exact structure:
 {{
-    "optimized_code": "# Your optimized code here with comments explaining changes",
-    "optimization_summary": "A detailed summary of optimizations, changes, and improvements made to the code."
+    "optimized_code": "ONLY executable code here - NO comments, NO explanations, NO docstrings",
+    "optimization_summary": "Detailed explanation of what was optimized"
 }}
 
-## Quality Checks
-1. Code must be 100% runnable
-2. All dependencies must be specified
-3. Version compatibility must be verified
-4. No breaking changes
-5. All optimizations must be justified
-6. Clear documentation must be provided
-7. Testing recommendations must be practical
- 
-## Limitations
-1. Only Python and MySQL optimizations
-2. Focus on data-related roles
-3. No experimental features
-4. Must maintain exact functionality
-5. Version compatibility required
-6. No library suggestions without verification
+2. The "optimized_code" field MUST contain:
+   - ONLY executable code
+   - NO comments (no #, //, /* */, ''' or '\""")
+   - NO docstrings
+   - NO explanations
+   - NO markdown
+   - Just pure, runnable code
 
-## CRITICAL: Code Output Requirements
-- The "optimized_code" value MUST contain ONLY executable code
-- DO NOT include any comments, explanations, docstrings, or markdown in the code
-- DO NOT include "#" comment lines in the code
-- DO NOT include triple-quoted strings (''' or \"""\") in the code
-- The code must be immediately runnable without any preprocessing
-- If you need to explain changes, put them ONLY in the "optimization_summary" field
+3. If the code is already optimal, return the same code without any changes
+4. If you cannot optimize the code, return the original code as-is
+5. NEVER return empty code or only comments
 
-# Input
-Question Context: {question}
+INPUT CONTEXT:
+Question: {question}
 Sample Input: {sample_input}
-Expected Output: {sample_output}
+Sample Output: {sample_output}
 User Code:
 {user_code}
 
-Return ONLY valid JSON matching the response format shown above. The "optimized_code" field must contain ONLY executable code without any comments or explanations. DO NOT return markdown, explanations, or any text outside the JSON object.
+OPTIMIZATION GUIDELINES:
+- Maintain exact functionality and output
+- Improve performance, readability, and best practices
+- Use better algorithms, data structures, or patterns
+- Follow language-specific conventions (PEP 8 for Python, etc.)
+- Add proper error handling if missing
+- Optimize for time/space complexity where possible
+
+Return ONLY the JSON object. No other text, no explanations outside the JSON.
 """
+        
         if rag_context:
-            prompt += f"\nRelevant Context:\n{rag_context}\n"
+            prompt += f"\n\nRELEVANT CONTEXT:\n{rag_context}\n"
+        
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_completion_tokens=1000,
             response_format={"type": "json_object"}
         )
+        
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
-        return content or get_fallback_optimized_code()
+        
+        if not content:
+            logger.error("Empty response from LLM for code optimization")
+            return json.dumps({
+                "optimized_code": user_code,  # Return original code as fallback
+                "optimization_summary": "Could not generate optimization. Returning original code."
+            })
+        
+        return content
 
     except Exception as e:
         logger.error(f"Error optimizing code: {str(e)}")
-        return get_fallback_optimized_code()
+        return json.dumps({
+            "optimized_code": user_code,  # Return original code as fallback
+            "optimization_summary": f"Error during optimization: {str(e)}. Returning original code."
+        })
 
 @retry_with_backoff
 async def generate_optimization_summary(
@@ -228,28 +152,43 @@ async def generate_optimized_code_with_summary(
             rag_context=rag_context,
             model=model
         )
-        # If the LLM returns a string, try to parse as JSON
+        
+        # Parse the JSON response
         if isinstance(optimized_json, str):
             try:
                 optimized_json = json.loads(optimized_json)
-            except Exception as e:
+            except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse JSON response: {str(e)}")
+                logger.error(f"Raw response: {optimized_json}")
                 return {
-                    "optimized_code": "# Error: Could not optimize code.",
-                    "optimization_summary": "Could not parse optimization result."
+                    "optimized_code": user_code,  # Return original code as fallback
+                    "optimization_summary": "Could not parse optimization result. Returning original code."
                 }
         
-        # Extract the required fields
-        optimized_code = optimized_json.get("optimized_code", "# Error: Could not optimize code.")
+        # Extract the required fields with validation
+        optimized_code = optimized_json.get("optimized_code", "")
         optimization_summary = optimized_json.get("optimization_summary", "No summary available.")
+        
+        # Validate optimized_code
+        if not optimized_code or not isinstance(optimized_code, str) or not optimized_code.strip():
+            logger.warning("LLM returned empty or invalid optimized_code, using original code")
+            optimized_code = user_code
+            optimization_summary = "No optimization was possible. Original code returned."
+        
+        # Final validation - ensure we have actual code
+        if optimized_code.strip() == "":
+            logger.error("Final optimized_code is empty, using original code")
+            optimized_code = user_code
+            optimization_summary = "Error: Generated code was empty. Original code returned."
         
         return {
             "optimized_code": optimized_code,
             "optimization_summary": optimization_summary
         }
+        
     except Exception as e:
         logger.error(f"Error in optimized code with summary: {str(e)}")
         return {
-            "optimized_code": get_fallback_optimized_code(),
-            "optimization_summary": "No summary available."
+            "optimized_code": user_code,  # Return original code as fallback
+            "optimization_summary": f"Error during optimization: {str(e)}. Original code returned."
         } 
