@@ -41,6 +41,7 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
     """
     Create a new interview session document.
     Initializes session with base question and first follow-up.
+    Handles both coding and approach interview types.
     """
     try:
         db = await get_db()
@@ -51,6 +52,28 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
             save_user_id = object_id
         except:
             save_user_id = user_id
+        
+        # Get interview type from question data
+        interview_type = base_question_data.get("interview_type", "approach")
+        
+        # Create base ai_response structure
+        ai_response = {
+            "session_id": session_id,
+            "base_question": base_question_data["question"],
+            "difficulty": base_question_data["difficulty"],
+            "example": base_question_data["example"],
+            "tags": base_question_data["tags"],
+            "first_follow_up": first_follow_up
+        }
+        
+        # Add coding-specific fields only for coding interviews
+        if interview_type == "coding":
+            ai_response.update({
+                "code_stub": base_question_data.get("code_stub", ""),
+                "language": base_question_data.get("language", ""),
+                "solutionCode": base_question_data.get("solutionCode", ""),
+                "expectedOutput": base_question_data.get("expectedOutput", "")
+            })
         
         # Create session document with all initial data
         session_doc = {
@@ -63,16 +86,7 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
                 "user_name": user_name,
                 "session_id": session_id
             },
-            "ai_response": {
-                "session_id": session_id,
-                "base_question": base_question_data["question"],
-                "difficulty": base_question_data["difficulty"],
-                "example": base_question_data["example"],
-                "code_stub": base_question_data["code_stub"],
-                "tags": base_question_data["tags"],
-                "language": base_question_data["language"],
-                "first_follow_up": first_follow_up
-            },
+            "ai_response": ai_response,
             "meta": {
                 "step": "init",
                 "session_type": "structured",
@@ -80,7 +94,8 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
                     "topic": topic,
                     "user_name": user_name,
                     "status": "in_progress",
-                    "current_phase": "questioning",
+                    "current_phase": "verbal" if interview_type == "coding" else "approach",
+                    "interview_type": interview_type,
                     "base_question_id": base_question_id,
                     "total_questions": 1,
                     "questions": [
@@ -100,13 +115,18 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
                         }
                     ],
                     "clarifications": [],
-                    "feedback": None
+                    "feedback": None,
+                    "coding_phase": {
+                        "status": "not_started" if interview_type == "coding" else "not_applicable",
+                        "code": "",
+                        "output": ""
+                    }
                 }
             }
         }
         
         result = await db.user_ai_interactions.insert_one(session_doc)
-        logger.info(f"Created interview session: {session_id} with _id: {result.inserted_id}")
+        logger.info(f"Created {interview_type} interview session: {session_id} with _id: {result.inserted_id}")
         return result.inserted_id
     except Exception as e:
         logger.error(f"Error creating interview session: {str(e)}", exc_info=True)

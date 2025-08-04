@@ -105,66 +105,126 @@ async def fetch_question_by_module(module_code: str):
     """
     Fetch a random question for a specific module from mainquestionbanks.
     Returns randomly selected question with metadata for interviews.
-    Filters by module_code and isAvailableForMock = True or isAvailableForMockInterview = True.
+    Randomly selects between coding questions (isAvailableForMockInterview=True) and approach questions (question_type="approach").
     Enhanced error logging for missing data.
     """
     try:
         db = await get_db()
         logger.info(f"Fetching question for module: {module_code}")
         
-        # Build aggregation pipeline for random question selection
-        pipeline = [
-            {
-                "$match": {
-                    "module_code": module_code,
-                    "$or": [
-                        {"isAvailableForMock": True},
-                        {"isAvailableForMockInterview": True}
-                    ],
-                    "isDeleted": False
-                }
-            },
-            {"$sample": {"size": 1}}
-        ]
-
-        # Check available question count
-        count = await db.mainquestionbanks.count_documents({
+        # First, check available questions for both types
+        coding_count = await db.mainquestionbanks.count_documents({
             "module_code": module_code,
-            "$or": [
-                {"isAvailableForMock": True},
-                {"isAvailableForMockInterview": True}
-            ],
+            "isAvailableForMockInterview": True,
             "isDeleted": False
         })
-        logger.info(f"Found {count} available questions for module '{module_code}' (isAvailableForMock/Interview, isDeleted=False)")
-
-        if count == 0:
-            logger.error(f"NO QUESTIONS FOUND: No questions found for module_code='{module_code}' with isAvailableForMock=True or isAvailableForMockInterview=True and isDeleted=False.\nCheck if the data exists and is correctly flagged in the database.")
-            raise Exception(f"No questions found for module '{module_code}' with isAvailableForMock=True or isAvailableForMockInterview=True")
+        
+        approach_count = await db.mainquestionbanks.count_documents({
+            "module_code": module_code,
+            "question_type": "approach",
+            "isDeleted": False
+        })
+        
+        logger.info(f"Found {coding_count} coding questions and {approach_count} approach questions for module '{module_code}'")
+        
+        if coding_count == 0 and approach_count == 0:
+            logger.error(f"NO QUESTIONS FOUND: No questions found for module_code='{module_code}' (coding: isAvailableForMockInterview=True, approach: question_type='approach')")
+            raise Exception(f"No questions found for module '{module_code}'")
+        
+        # Determine question type to fetch
+        import random
+        
+        # If both types available, randomly choose (60% coding, 40% approach)
+        if coding_count > 0 and approach_count > 0:
+            question_type = "coding" if random.random() < 0.6 else "approach"
+        elif coding_count > 0:
+            question_type = "coding"
+        else:
+            question_type = "approach"
+        
+        logger.info(f"Selected question type: {question_type}")
+        
+        # Build aggregation pipeline based on selected type
+        if question_type == "coding":
+            pipeline = [
+                {
+                    "$match": {
+                        "module_code": module_code,
+                        "question_type": "coding",  # Explicitly check question_type
+                        "isAvailableForMockInterview": True,
+                        "isDeleted": False
+                    }
+                },
+                {"$sample": {"size": 1}}
+            ]
+        else:  # approach
+            pipeline = [
+                {
+                    "$match": {
+                        "module_code": module_code,
+                        "question_type": "approach",
+                        "isDeleted": False
+                    }
+                },
+                {"$sample": {"size": 1}}
+            ]
 
         # Execute aggregation pipeline
         cursor = db.mainquestionbanks.aggregate(pipeline)
         result = await cursor.to_list(length=1)
 
         if not result:
-            logger.error(f"NO QUESTIONS RETURNED: Aggregation pipeline returned no results for module_code='{module_code}'. Pipeline: {pipeline}")
+            logger.error(f"NO QUESTIONS RETURNED: Aggregation pipeline returned no results for module_code='{module_code}', question_type='{question_type}'")
             raise Exception(f"No questions found for module '{module_code}' (aggregation returned no results)")
 
         question_doc = result[0]
+        actual_question_type = question_doc.get("question_type", "unknown")
+        
         logger.info(f"Fetched question: {question_doc.get('question', 'No question text')}")
-
-        # Return formatted question data
-        return {
+        logger.info(f"Expected question_type: {question_type}, Actual question_type: {actual_question_type}")
+        logger.info(f"isAvailableForMockInterview: {question_doc.get('isAvailableForMockInterview', False)}")
+        
+        # Verify we got the correct question type
+        if question_type == "coding" and actual_question_type != "coding":
+            logger.error(f"TYPE MISMATCH: Expected coding question but got {actual_question_type}")
+            # Try to find a coding question manually
+            coding_question = await db.mainquestionbanks.find_one({
+                "module_code": module_code,
+                "question_type": "coding",
+                "isAvailableForMockInterview": True,
+                "isDeleted": False
+            })
+            if coding_question:
+                logger.info("Found coding question manually, using that instead")
+                question_doc = coding_question
+                actual_question_type = "coding"
+            else:
+                logger.error("No coding questions found, falling back to approach")
+                question_type = "approach"
+        
+        # Return formatted question data with interview type
+        formatted_question = {
             "_id": str(question_doc.get("_id")),
             "question": question_doc.get("question", ""),
-            "code_stub": question_doc.get("base_code", ""),
-            "language": question_doc.get("programming_language", ""),
             "difficulty": question_doc.get("level", ""),
             "example": question_doc.get("description", ""),
             "tags": [t["topic_name"] for t in question_doc.get("topics", [])],
             "module_code": question_doc.get("module_code", ""),
-            "topic_code": question_doc.get("topic_code", "")
+            "topic_code": question_doc.get("topic_code", ""),
+            "interview_type": question_type
         }
+        
+        # Add coding-specific fields only for coding questions
+        if question_type == "coding":
+            formatted_question.update({
+                "code_stub": question_doc.get("base_code", ""),
+                "language": question_doc.get("programming_language", ""),
+                "solutionCode": question_doc.get("solutionCode", ""),
+                "expectedOutput": question_doc.get("output", "")
+            })
+        
+        logger.info(f"Final interview_type: {formatted_question['interview_type']}")
+        return formatted_question
 
     except Exception as e:
         logger.error(f"Error fetching question by module: {str(e)} | module_code={module_code}", exc_info=True)
@@ -173,19 +233,19 @@ async def fetch_question_by_module(module_code: str):
 async def get_available_modules():
     """
     Get list of available modules for mock interviews.
-    Returns all unique module codes that have questions with isAvailableForMock=True or isAvailableForMockInterview=True.
+    Returns all unique module codes that have questions with isAvailableForMockInterview=True (coding) or question_type="approach".
     Enhanced error logging for missing data.
     """
     try:
         db = await get_db()
         
-        # Get all unique module codes that have available questions
+        # Get all unique module codes that have available questions (coding or approach)
         pipeline = [
             {
                 "$match": {
                     "$or": [
-                        {"isAvailableForMock": True},
-                        {"isAvailableForMockInterview": True}
+                        {"isAvailableForMockInterview": True},  # Coding questions
+                        {"question_type": "approach"}           # Approach questions
                     ],
                     "isDeleted": False
                 }
@@ -212,9 +272,9 @@ async def get_available_modules():
             for module in modules if module["_id"]
         ]
         
-        logger.info(f"Found {len(module_list)} available modules (isAvailableForMock/Interview, isDeleted=False)")
+        logger.info(f"Found {len(module_list)} available modules (coding: isAvailableForMockInterview=True, approach: question_type='approach')")
         if not module_list:
-            logger.error("NO MODULES FOUND: No modules found with isAvailableForMock=True or isAvailableForMockInterview=True and isDeleted=False.\nCheck if the data exists and is correctly flagged in the database.")
+            logger.error("NO MODULES FOUND: No modules found with isAvailableForMockInterview=True or question_type='approach' and isDeleted=False.\nCheck if the data exists and is correctly flagged in the database.")
         return module_list
         
     except Exception as e:

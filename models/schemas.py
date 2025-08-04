@@ -77,3 +77,51 @@ class FeedbackResponse(BaseModel):
     areas_for_improvement: List[str]
     score: int
 
+class CodeExecutionRequest(BaseModel):
+    """
+    Request model for executing user code.
+    Includes code, input data, and execution parameters.
+    """
+    session_id: str
+    code: str
+    input_data: str = ""
+    language: str = "python"
+    timeout_seconds: int = 10
+
+class CodeAssessmentRequest(BaseModel):
+    """
+    Request model for comprehensive code assessment.
+    Includes code, question context, and assessment parameters.
+    """
+    session_id: str
+    code: str
+    question: str
+    sample_input: str = ""
+    sample_output: str = ""
+    language: str = "python"
+
+class CodeExecutionResult(BaseModel):
+    """
+    Response model for code execution results.
+    Includes output, errors, performance metrics.
+    """
+    stdout: str
+    stderr: str
+    return_code: int
+    execution_time: float
+    memory_usage: float = 0.0
+    success: bool
+
+class CodeAssessmentResult(BaseModel):
+    """
+    Response model for code assessment results.
+    Includes performance analysis, quality metrics, and recommendations.
+    """
+    execution_result: CodeExecutionResult
+    performance_analysis: dict
+    code_quality_score: float
+    complexity_analysis: dict
+    optimization_suggestions: list
+    best_practices_feedback: list
+    overall_score: float
+

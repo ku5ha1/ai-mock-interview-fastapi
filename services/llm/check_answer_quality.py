@@ -53,16 +53,24 @@ async def check_single_answer_quality(question: str, answer: str, topic: str, ra
     """
     Assess quality of a single interview answer.
     Uses RAG context for domain-specific evaluation.
-    Less strict: Accepts reasonable attempts as 'good', only marks 'bad' if answer is empty, irrelevant, or nonsensical.
+    More lenient for approach interviews: Accepts reasonable algorithmic thinking as 'good'.
+    Only marks 'bad' if answer is empty, irrelevant, or completely nonsensical.
     """
     try:
         prompt = f"""
 Review the following answer to the {topic} interview question.
 Evaluate based on:
 - Is the answer relevant to the question?
-- Does it make a reasonable attempt to address the question?
+- Does it demonstrate reasonable thinking or attempt to solve the problem?
+- For algorithmic questions: Does it show understanding of the problem and propose a reasonable approach?
 
-Respond with only 'good' if the answer is relevant and makes a reasonable attempt to address the question, even if it is not perfect. Only respond with 'bad' if the answer is completely irrelevant, empty, or nonsensical.
+IMPORTANT: Be very lenient. Only mark as 'bad' if the answer is:
+- Completely empty or very short (less than 10 words)
+- Completely irrelevant to the question
+- Nonsensical or gibberish
+- Just "I don't know" without any attempt
+
+For algorithmic thinking questions, even a basic approach or partial understanding should be marked as 'good'.
 
 Question: {question}
 Answer: {answer}
@@ -80,7 +88,13 @@ Answer: {answer}
             max_tokens=10
         )
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
-        return "good" if content and "good" in content.lower() else "bad"
+        
+        # More lenient parsing - default to 'good' unless explicitly marked 'bad'
+        if content and "bad" in content.lower():
+            return "bad"
+        else:
+            return "good"
+            
     except Exception as e:
         logger.error(f"Error checking single answer quality: {str(e)}")
-        return "bad"
+        return "good"  # Default to good on error to avoid blocking interviews

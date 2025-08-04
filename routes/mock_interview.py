@@ -53,7 +53,7 @@ async def init_interview(init_data: InterviewInit):
         
         # Generate first follow-up question
         try:
-            first_follow_up = await get_next_question([], is_base_question=True, topic=init_data.module_code, rag_context=rag_context)
+            first_follow_up = await get_next_question([], is_base_question=True, topic=init_data.module_code, rag_context=rag_context, interview_type=base_question_data.get("interview_type", "coding"))
         except Exception as e:
             logger.error(f"Error generating follow-up question: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error generating follow-up question: {str(e)}")
@@ -81,14 +81,23 @@ async def init_interview(init_data: InterviewInit):
             "base_question": base_question_data["question"],
             "difficulty": base_question_data["difficulty"],
             "example": base_question_data["example"],
-            "code_stub": base_question_data["code_stub"],
             "tags": base_question_data["tags"],
-            "language": base_question_data["language"],
             "first_follow_up": first_follow_up,
             "base_question_id": str(base_question_data["_id"]),
             "module_code": base_question_data.get("module_code", ""),
-            "topic_code": base_question_data.get("topic_code", "")
+            "topic_code": base_question_data.get("topic_code", ""),
+            "interview_type": base_question_data.get("interview_type", "approach")
         }
+        
+        # Add coding-specific fields only for coding interviews
+        if base_question_data.get("interview_type") == "coding":
+            response.update({
+                "code_stub": base_question_data.get("code_stub", ""),
+                "language": base_question_data.get("language", ""),
+                "sample_input": base_question_data.get("expectedOutput", ""),  # Using expectedOutput as sample input
+                "sample_output": base_question_data.get("expectedOutput", "")
+            })
+        
         return response
     except HTTPException:
         raise
@@ -101,6 +110,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
     """
     Submit user's answer during interview session.
     Handles both questioning and coding phases, generates follow-up questions or transitions to coding.
+    Supports both coding and approach interview types.
     """
     try:
         session_id = answer_request.session_id
@@ -109,7 +119,9 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             logger.error(f"Session not found: {session_id}")
             raise HTTPException(status_code=404, detail="Interview session not found")
         
-        current_phase = session["meta"]["session_data"]["current_phase"]
+        session_data = session["meta"]["session_data"]
+        interview_type = session_data.get("interview_type", "approach")
+        current_phase = session_data["current_phase"]
         
         # Handle coding phase (clarifications or final code submission)
         if current_phase == "coding":
@@ -122,7 +134,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                         "question": clarification_resp,
                         "clarification": True,
                         "ready_to_code": True,
-                        "language": session["ai_response"]["language"]
+                        "language": session["ai_response"].get("language", "")
                     }
                 except Exception as e:
                     logger.error(f"Error generating clarification: {str(e)}", exc_info=True)
@@ -145,7 +157,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             context_chunks = await retriever.retrieve_context(session_data["topic"])
             rag_context = "\n\n".join(context_chunks)
 
-        # Check answer quality
+        # Check answer quality - more lenient for approach interviews
         last_answered_question = None
         for q in reversed(session_data["follow_up_questions"]):
             if q.get("answer"):
@@ -153,14 +165,24 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 break
         if not last_answered_question:
             last_answered_question = session_data["follow_up_questions"][-1]
+        
+        # For approach interviews, be more lenient with answer quality
+        if interview_type == "approach":
+            # Only check quality if answer is very short or empty
+            answer_text = last_answered_question.get("answer", "").strip()
+            if len(answer_text) < 10:  # Very short answers
+                quality = "bad"
+            else:
+                quality = "good"  # Assume good for approach interviews with reasonable length
+        else:
+            # For coding interviews, use the quality check
+            quality = await check_single_answer_quality(
+                question=last_answered_question["question"],
+                answer=last_answered_question.get("answer", ""),
+                topic=session_data["topic"],
+                rag_context=rag_context
+            )
             
-        quality = await check_single_answer_quality(
-            question=last_answered_question["question"],
-            answer=last_answered_question.get("answer", ""),
-            topic=session_data["topic"],
-            rag_context=rag_context
-        )
-
         # Provide feedback for poor quality answers
         if quality == "bad":
             feedback_message = await generate_clarification_feedback(
@@ -170,47 +192,81 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             return {
                 "question": feedback_message,
                 "ready_to_code": False,
-                "language": session["ai_response"]["language"]
+                "language": session["ai_response"].get("language", "")
             }
 
         total_questions = session_data["total_questions"]
         
-        # Generate next question if less than 5 questions
-        if total_questions < 5:
-            conversation_history = []
-            if session_data.get("questions"):
-                base_question = session_data["questions"][0]
-                conversation_history.append({"role": "assistant", "content": base_question["question"]})
+        # Different logic for coding vs approach interviews
+        if interview_type == "coding":
+            # Generate next question if less than 5 questions for coding interviews
+            if total_questions < 5:
+                conversation_history = []
+                if session_data.get("questions"):
+                    base_question = session_data["questions"][0]
+                    conversation_history.append({"role": "assistant", "content": base_question["question"]})
 
-            for q in session_data["follow_up_questions"]:
-                conversation_history.append({"role": "assistant", "content": q["question"]})
-                if q.get("answer"):
-                    conversation_history.append({"role": "user", "content": q["answer"]})
-            
-            try:
-                next_question = await get_next_question(conversation_history, topic=session_data["topic"], rag_context=rag_context)
-                await add_follow_up_question(session_id, next_question)
+                for q in session_data["follow_up_questions"]:
+                    conversation_history.append({"role": "assistant", "content": q["question"]})
+                    if q.get("answer"):
+                        conversation_history.append({"role": "user", "content": q["answer"]})
                 
+                try:
+                    next_question = await get_next_question(conversation_history, topic=session_data["topic"], rag_context=rag_context, interview_type=interview_type)
+                    await add_follow_up_question(session_id, next_question)
+                    
+                    return {
+                        "question": next_question,
+                        "ready_to_code": False,
+                        "language": session["ai_response"].get("language", "")
+                    }
+                except Exception as e:
+                    logger.error(f"Error generating next question: {str(e)}", exc_info=True)
+                    raise HTTPException(status_code=500, detail=f"Error generating next question: {str(e)}")
+            
+            # Transition to coding phase after 5 questions for coding interviews
+            else:
+                await transition_to_coding_phase(session_id)
                 return {
-                    "question": next_question,
-                    "ready_to_code": False,
-                    "language": session["ai_response"]["language"]
+                    "question": "Great! Now let's move to the coding phase. You can start coding below.",
+                    "clarification": True,
+                    "ready_to_code": True,
+                    "code_stub": session["ai_response"].get("code_stub", ""),
+                    "language": session["ai_response"].get("language", ""),
+                    "tags": session["ai_response"].get("tags", [])
                 }
-            except Exception as e:
-                logger.error(f"Error generating next question: {str(e)}", exc_info=True)
-                raise HTTPException(status_code=500, detail=f"Error generating next question: {str(e)}")
         
-        # Transition to coding phase after 5 questions
-        else:
-            await transition_to_coding_phase(session_id)
-            return {
-                "question": "You can start coding now. If you need clarification on the problem, please ask.",
-                "clarification": True,
-                "ready_to_code": True,
-                "code_stub": session["ai_response"]["code_stub"],
-                "language": session["ai_response"]["language"],
-                "tags": session["ai_response"]["tags"]
-            }
+        else:  # approach interview
+            # Generate next question if less than 7 questions for approach interviews
+            if total_questions < 7:
+                conversation_history = []
+                if session_data.get("questions"):
+                    base_question = session_data["questions"][0]
+                    conversation_history.append({"role": "assistant", "content": base_question["question"]})
+
+                for q in session_data["follow_up_questions"]:
+                    conversation_history.append({"role": "assistant", "content": q["question"]})
+                    if q.get("answer"):
+                        conversation_history.append({"role": "user", "content": q["answer"]})
+                
+                try:
+                    next_question = await get_next_question(conversation_history, topic=session_data["topic"], rag_context=rag_context, interview_type=interview_type)
+                    await add_follow_up_question(session_id, next_question)
+                    
+                    return {
+                        "question": next_question,
+                        "ready_to_code": False
+                    }
+                except Exception as e:
+                    logger.error(f"Error generating next question: {str(e)}", exc_info=True)
+                    raise HTTPException(status_code=500, detail=f"Error generating next question: {str(e)}")
+            
+            # End approach interview after 7 questions
+            else:
+                return {
+                    "question": "Great discussion! You can submit the session and check your feedback.",
+                    "session_complete": True
+                }
 
     except HTTPException:
         raise
@@ -302,13 +358,28 @@ async def get_interview_feedback(session_id: str):
             logger.error(f"No conversation found for session: {session_id}")
             raise HTTPException(status_code=404, detail="No conversation found for this session")
         
-        # Generate feedback with personalized context
+        # Check if this is a coding interview with code submission
+        interview_type = session_data.get("interview_type", "approach")
+        code_data = None
+        
+        if interview_type == "coding" and session_data.get("coding_phase", {}).get("code"):
+            # Get code data for assessment
+            code_data = {
+                "code": session_data["coding_phase"]["code"],
+                "output": session_data["coding_phase"].get("output", ""),
+                "solutionCode": session["ai_response"].get("solutionCode", ""),
+                "expectedOutput": session["ai_response"].get("expectedOutput", "")
+            }
+            logger.info(f"Including code assessment for coding interview. Code length: {len(code_data['code'])}")
+        
+        # Generate feedback with personalized context and code data if available
         feedback_data = await get_feedback(
             conversation,
             session_data["user_name"],
             previous_attempt=None,
             personalized_guidance=personalized_context["personalized_guidance"] if personalized_context["personalized_guidance"] else None,
-            user_patterns=personalized_context["user_patterns"] if "user_patterns" in personalized_context else None
+            user_patterns=personalized_context["user_patterns"] if "user_patterns" in personalized_context else None,
+            code_data=code_data  # Pass code data for coding interviews
         )
         
         # Add previous attempt info if available

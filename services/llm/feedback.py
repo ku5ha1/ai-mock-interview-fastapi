@@ -14,10 +14,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 @retry_with_backoff
-async def get_feedback(conversation: List[Dict[str, Any]], user_name: str, previous_attempt: dict = None, personalized_guidance: str = None, user_patterns: Any = None) -> dict:
+async def get_feedback(conversation: List[Dict[str, Any]], user_name: str, previous_attempt: dict = None, personalized_guidance: str = None, user_patterns: Any = None, code_data: dict = None) -> dict:
     """
     Generate comprehensive feedback for interview session.
     Uses conversation history and user patterns for personalized feedback.
+    Includes code assessment for coding interviews.
     """
     try:
         # Format conversation for analysis
@@ -28,6 +29,23 @@ async def get_feedback(conversation: List[Dict[str, Any]], user_name: str, previ
 
         name_reference = f"{user_name}" if user_name else "the candidate"
         extra_context = ""
+        
+        # Add code assessment context if available
+        if code_data:
+            extra_context += f"""
+CODE ASSESSMENT:
+User Code: {code_data.get('code', '')}
+User Output: {code_data.get('output', '')}
+Expected Solution: {code_data.get('solutionCode', '')}
+Expected Output: {code_data.get('expectedOutput', '')}
+
+Analyze the code for:
+- Correctness and functionality
+- Code quality and best practices
+- Performance and optimization
+- Integration with verbal interview performance
+
+"""
         
         # Add previous attempt context if available
         if previous_attempt:
@@ -105,6 +123,20 @@ Provide intelligent, contextual feedback that:
 9. Evaluates problem-solving ability, reasoning clarity, and technical communication
 10. Assesses awareness of trade-offs and edge case handling
 11. Considers domain-specific evaluation criteria (Python data analysis, SQL, algorithms, etc.)
+"""
+
+        # Add code assessment instructions if code data is available
+        if code_data:
+            prompt += f"""
+12. Evaluates code implementation quality, correctness, and best practices
+13. Integrates verbal interview performance with code implementation
+14. Provides specific feedback on code structure, efficiency, and readability
+15. Assesses whether the code matches the approach discussed in the verbal phase
+
+IMPORTANT: For coding interviews, provide comprehensive feedback that covers both verbal reasoning and code implementation. Connect the code quality to the verbal discussion and provide specific suggestions for improvement.
+"""
+
+        prompt += f"""
 
 The feedback should feel like a real conversation with an expert who understands the interview context and is giving specific, relevant guidance.
 
@@ -114,7 +146,17 @@ Evaluation Criteria:
 - Ability to reason under pressure
 - Awareness of trade-offs and edge cases
 - Domain-specific technical knowledge
-- Problem-solving methodology
+- Problem-solving methodology"""
+
+        # Add code evaluation criteria if code data is available
+        if code_data:
+            prompt += f"""
+- Code correctness and functionality
+- Code quality and best practices
+- Performance and optimization
+- Integration of verbal reasoning with code implementation"""
+
+        prompt += f"""
 
 Include:
 - Summary (2-3 lines analyzing the overall interview performance in context)
