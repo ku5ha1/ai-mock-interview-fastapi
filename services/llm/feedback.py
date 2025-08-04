@@ -44,6 +44,11 @@ Analyze the code for:
 - Code quality and best practices
 - Performance and optimization
 - Integration with verbal interview performance
+- Specific technical issues (missing imports, incorrect syntax, wrong calculations)
+- Partial understanding and correct elements
+- Specific suggestions for improvement
+
+IMPORTANT: Be specific about technical issues while recognizing any correct elements or partial understanding. Identify exact problems like missing imports, incorrect calculations, or syntax errors.
 
 """
         
@@ -109,7 +114,18 @@ Based on the following interview conversation with {name_reference}, provide int
 {extra_context}
 When writing the feedback, naturally refer to the candidate by their name ("{user_name}") where appropriate (e.g., in the summary or advice), but do not include the name as a separate field in the JSON.
 
-Be honest, direct, and critical while being constructive. If any answers are missing, incomplete, irrelevant, or appear to be gibberish or nonsensical, explicitly state this in the summary and do not list any positive points or strengths. Leave the positive_points array empty in such cases. Do NOT give positive feedback or mention strengths unless they are clearly demonstrated in the answers. If the candidate's responses are poor, unclear, or off-topic, do not sugarcoat or provide generic praise—be specific about what was lacking.
+Be honest, direct, and critical while being constructive. Provide balanced feedback that:
+1. Recognizes partial understanding and effort, even if incomplete
+2. Identifies specific technical issues and areas for improvement
+3. Gives credit for demonstrated knowledge while pointing out gaps
+4. Provides specific, actionable suggestions for improvement
+
+IMPORTANT GUIDELINES:
+- If the candidate shows ANY understanding or effort, include positive points
+- Be specific about what was done correctly vs. what needs improvement
+- For coding interviews: Analyze the actual code structure, syntax, and logic
+- Provide constructive criticism that helps the candidate improve
+- Avoid overly harsh assessments that don't recognize partial understanding
 
 Provide intelligent, contextual feedback that:
 1. Analyzes the specific interview topic and questions asked
@@ -132,8 +148,11 @@ Provide intelligent, contextual feedback that:
 13. Integrates verbal interview performance with code implementation
 14. Provides specific feedback on code structure, efficiency, and readability
 15. Assesses whether the code matches the approach discussed in the verbal phase
+16. Identifies specific technical issues (missing imports, incorrect calculations, etc.)
+17. Recognizes partial understanding and correct elements in the code
+18. Provides specific suggestions for fixing identified issues
 
-IMPORTANT: For coding interviews, provide comprehensive feedback that covers both verbal reasoning and code implementation. Connect the code quality to the verbal discussion and provide specific suggestions for improvement.
+IMPORTANT: For coding interviews, provide comprehensive feedback that covers both verbal reasoning and code implementation. Connect the code quality to the verbal discussion and provide specific suggestions for improvement. Be specific about technical issues while recognizing any correct elements or partial understanding.
 """
 
         prompt += f"""
@@ -154,13 +173,15 @@ Evaluation Criteria:
 - Code correctness and functionality
 - Code quality and best practices
 - Performance and optimization
-- Integration of verbal reasoning with code implementation"""
+- Integration of verbal reasoning with code implementation
+- Specific technical accuracy (syntax, imports, calculations)
+- Partial understanding recognition"""
 
         prompt += f"""
 
 Include:
 - Summary (2-3 lines analyzing the overall interview performance in context)
-- Positive Points (specific strengths demonstrated in this interview, if any)
+- Positive Points (specific strengths demonstrated in this interview, even if partial)
 - Points to Address (specific areas from this interview that need improvement)
 - Areas for Improvement (broader areas relevant to this interview topic)
 - Metrics (a dictionary of key performance indicators, comparing to past performance if available. For example: {{"technical_skills": "improved by 15%", "communication": "consistent"}})

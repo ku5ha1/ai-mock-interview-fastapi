@@ -140,10 +140,28 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                     logger.error(f"Error generating clarification: {str(e)}", exc_info=True)
                     raise HTTPException(status_code=500, detail=f"Error generating clarification: {str(e)}")
             else:
-                # Final code submission
+                # Final code submission - just mark session as ready for feedback
                 await update_interview_session_answer(session_id, answer_request.answer, False)
-                await transition_to_coding_phase(session_id)
-                return {"message": "Code submitted successfully. Generating feedback."}
+                
+                # Mark session as completed (code will be submitted via POST /feedback)
+                session = await get_interview_session(session_id)
+                session_data = session["meta"]["session_data"]
+                session_data["status"] = "completed"
+                session_data["current_phase"] = "completed"
+                
+                # Update session
+                db = await get_db()
+                await db.user_ai_interactions.update_one(
+                    {"session_id": session_id},
+                    {
+                        "$set": {
+                            "meta.session_data": session_data,
+                            "timestamp": datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return {"message": "Code submitted successfully. You can now generate feedback."}
 
         # Update session with user's answer
         await update_interview_session_answer(session_id, answer_request.answer, False)
@@ -288,11 +306,12 @@ def ensure_feedback_fields(feedback, base_question):
     
     return feedback
 
-@router.get("/feedback/{session_id}")
-async def get_interview_feedback(session_id: str):
+@router.post("/feedback/{session_id}")
+async def get_interview_feedback(session_id: str, code_submission: dict = Body(default=None)):
     """
     Generate comprehensive feedback for completed interview session.
     Analyzes conversation and provides personalized feedback with recommendations.
+    Accepts code and output data for coding interviews.
     """
     try:
         session = await get_interview_session(session_id)
@@ -362,15 +381,17 @@ async def get_interview_feedback(session_id: str):
         interview_type = session_data.get("interview_type", "approach")
         code_data = None
         
-        if interview_type == "coding" and session_data.get("coding_phase", {}).get("code"):
-            # Get code data for assessment
+        if interview_type == "coding" and code_submission:
+            # Get code data from POST request body
             code_data = {
-                "code": session_data["coding_phase"]["code"],
-                "output": session_data["coding_phase"].get("output", ""),
+                "code": code_submission.get("code", ""),
+                "output": code_submission.get("output", ""),
                 "solutionCode": session["ai_response"].get("solutionCode", ""),
                 "expectedOutput": session["ai_response"].get("expectedOutput", "")
             }
             logger.info(f"Including code assessment for coding interview. Code length: {len(code_data['code'])}")
+        elif interview_type == "coding" and not code_submission:
+            logger.warning(f"Coding interview but no code submission provided for session: {session_id}")
         
         # Generate feedback with personalized context and code data if available
         feedback_data = await get_feedback(
