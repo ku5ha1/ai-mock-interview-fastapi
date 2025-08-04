@@ -222,7 +222,8 @@ async def add_follow_up_question(session_id: str, question: str):
             "question": question,
             "answer": "",
             "timestamp": datetime.utcnow(),
-            "question_type": "follow_up"
+            "question_type": "follow_up",
+            "clarification_count": 0  # Initialize clarification counter
         }
         
         session_data["follow_up_questions"].append(new_question)

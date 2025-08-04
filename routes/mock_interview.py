@@ -184,6 +184,14 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
         if not last_answered_question:
             last_answered_question = session_data["follow_up_questions"][-1]
         
+        # Get clarification count for this question to prevent infinite loops
+        clarification_count = last_answered_question.get("clarification_count", 0)
+        max_clarifications = 2  # Maximum clarifications per question
+        
+        # Get total clarifications across all questions to prevent overall stalling
+        total_clarifications = sum(q.get("clarification_count", 0) for q in session_data["follow_up_questions"])
+        max_total_clarifications = 5  # Maximum total clarifications for entire session
+        
         # For approach interviews, be more lenient with answer quality
         if interview_type == "approach":
             # Only check quality if answer is very short or empty
@@ -201,8 +209,18 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 rag_context=rag_context
             )
             
-        # Provide feedback for poor quality answers
-        if quality == "bad":
+        # Provide feedback for poor quality answers (with clarification limits)
+        if quality == "bad" and clarification_count < max_clarifications and total_clarifications < max_total_clarifications:
+            # Increment clarification count
+            clarification_count += 1
+            
+            # Update the question with clarification count
+            db = await get_db()
+            await db.user_ai_interactions.update_one(
+                {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
+                {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": clarification_count}}
+            )
+            
             feedback_message = await generate_clarification_feedback(
                 last_answered_question["question"],
                 last_answered_question.get("answer", "")
@@ -212,6 +230,25 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 "ready_to_code": False,
                 "language": session["ai_response"].get("language", "")
             }
+        
+        # If we've reached max clarifications or quality is good, proceed to next question
+        # Reset clarification count and mark this question as properly answered
+        if clarification_count > 0:
+            db = await get_db()
+            await db.user_ai_interactions.update_one(
+                {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
+                {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": 0}}
+            )
+        
+        # If we've reached maximum total clarifications, force progression
+        if total_clarifications >= max_total_clarifications:
+            logger.info(f"Session {session_id} reached maximum clarifications ({total_clarifications}), forcing progression")
+            # Mark current question as answered to prevent further clarifications
+            db = await get_db()
+            await db.user_ai_interactions.update_one(
+                {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
+                {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": 0}}
+            )
 
         total_questions = session_data["total_questions"]
         
