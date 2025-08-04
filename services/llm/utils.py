@@ -177,7 +177,7 @@ async def check_question_answered_by_id(user_id: str, question_bank_id: str) -> 
 async def generate_clarification_feedback(question: str, answer: str) -> str:
     """
     Generate clarification feedback for unclear or incomplete answers.
-    Provides interviewer-style follow-up questions.
+    Provides interviewer-style clarifications, not new questions.
     """
     prompt = f"""
 You are a technical interviewer. The candidate's answer to the following question was unclear, incomplete, or off-topic.
@@ -185,9 +185,23 @@ You are a technical interviewer. The candidate's answer to the following questio
 Question: {question}
 Candidate's answer: {answer}
 
-As an interviewer, point out what was missing or unclear in the answer and ask a direct, probing follow-up question. Do not thank the candidate, do not encourage them to try again, and do not use phrases like 'I encourage you' or 'Thank you for your response.' Keep your tone professional, neutral, and focused on clarifying or probing further. Respond as you would in a real interview.
+As an interviewer, provide a CLARIFICATION, not a new question. Your response should:
 
-Your response should be a single, direct follow-up or clarification question or statement.
+1. Briefly point out what was unclear or missing in their answer
+2. Ask them to clarify or expand on the SAME topic/question
+3. Do NOT introduce new concepts or ask follow-up questions about different aspects
+
+Examples of good clarifications:
+- "Your answer was quite brief. Could you elaborate on how you would approach this step by step?"
+- "I didn't see you mention [specific aspect]. How would you handle that part?"
+- "Your response seems to miss the core requirement. Can you focus specifically on [the main question]?"
+
+Examples of what NOT to do:
+- Don't ask about time complexity if the original question was about basic implementation
+- Don't introduce new concepts not mentioned in the original question
+- Don't ask follow-up questions about different topics
+
+Keep your tone professional and neutral. Your response should be a single clarification statement.
 """
     try:
         response = await client.chat.completions.create(

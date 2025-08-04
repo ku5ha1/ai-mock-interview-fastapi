@@ -225,25 +225,39 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 last_answered_question["question"],
                 last_answered_question.get("answer", "")
             )
+            logger.info(f"Session {session_id}: Generated clarification for question '{last_answered_question['question'][:50]}...' with answer '{last_answered_question.get('answer', '')[:50]}...' -> Clarification: '{feedback_message[:100]}...'")
             return {
                 "question": feedback_message,
                 "ready_to_code": False,
                 "language": session["ai_response"].get("language", "")
             }
         
-        # If we've reached max clarifications or quality is good, proceed to next question
-        # Reset clarification count and mark this question as properly answered
-        if clarification_count > 0:
-            db = await get_db()
-            await db.user_ai_interactions.update_one(
-                {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
-                {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": 0}}
+        # If we've reached max clarifications, check if the final answer is good
+        if clarification_count >= max_clarifications:
+            # Check quality of the final answer after clarifications
+            final_answer_quality = await check_single_answer_quality(
+                question=last_answered_question["question"],
+                answer=last_answered_question.get("answer", ""),
+                topic=session_data["topic"],
+                rag_context=rag_context
             )
+            
+            if final_answer_quality == "good":
+                # User provided a good answer after clarifications - mark as properly answered
+                db = await get_db()
+                await db.user_ai_interactions.update_one(
+                    {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
+                    {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": 0}}
+                )
+                logger.info(f"Session {session_id}: Question properly answered after clarifications")
+            else:
+                # User still provided poor answer after clarifications - don't count as properly answered
+                logger.info(f"Session {session_id}: Question still poorly answered after clarifications, not counting as properly answered")
         
-        # If we've reached maximum total clarifications, force progression
+        # If we've reached maximum total clarifications, force progression but don't count as properly answered
         if total_clarifications >= max_total_clarifications:
             logger.info(f"Session {session_id} reached maximum clarifications ({total_clarifications}), forcing progression")
-            # Mark current question as answered to prevent further clarifications
+            # Reset clarification count but don't mark as properly answered
             db = await get_db()
             await db.user_ai_interactions.update_one(
                 {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
@@ -254,8 +268,20 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
         
         # Different logic for coding vs approach interviews
         if interview_type == "coding":
-            # Generate next question if less than 5 questions for coding interviews
-            if total_questions < 5:
+            # Count only properly answered questions (not clarifications)
+            properly_answered_questions = sum(1 for q in session_data["follow_up_questions"] 
+                                            if q.get("answer") and q.get("clarification_count", 0) == 0)
+            
+            # Fallback: If user has answered many questions but none are properly answered, 
+            # allow progression after a reasonable number of attempts
+            if properly_answered_questions == 0 and total_questions >= 8:
+                logger.info(f"Session {session_id}: User has answered {total_questions} questions but none properly. Allowing progression to coding phase.")
+                properly_answered_questions = 5  # Force progression
+            
+            logger.info(f"Session {session_id}: total_questions={total_questions}, properly_answered_questions={properly_answered_questions}")
+            
+            # Generate next question if less than 5 properly answered questions for coding interviews
+            if properly_answered_questions < 5:
                 conversation_history = []
                 if session_data.get("questions"):
                     base_question = session_data["questions"][0]
@@ -292,8 +318,20 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 }
         
         else:  # approach interview
-            # Generate next question if less than 7 questions for approach interviews
-            if total_questions < 7:
+            # Count only properly answered questions (not clarifications)
+            properly_answered_questions = sum(1 for q in session_data["follow_up_questions"] 
+                                            if q.get("answer") and q.get("clarification_count", 0) == 0)
+            
+            # Fallback: If user has answered many questions but none are properly answered, 
+            # allow progression after a reasonable number of attempts
+            if properly_answered_questions == 0 and total_questions >= 10:
+                logger.info(f"Session {session_id}: User has answered {total_questions} questions but none properly. Allowing progression to completion.")
+                properly_answered_questions = 7  # Force progression
+            
+            logger.info(f"Session {session_id}: total_questions={total_questions}, properly_answered_questions={properly_answered_questions}")
+            
+            # Generate next question if less than 7 properly answered questions for approach interviews
+            if properly_answered_questions < 7:
                 conversation_history = []
                 if session_data.get("questions"):
                     base_question = session_data["questions"][0]
