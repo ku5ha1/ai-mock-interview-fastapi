@@ -90,14 +90,15 @@ async def optimize_code(request: CodeOptimizationRequest):
             rag_context = "\n\n".join(context_chunks)
         
         # Generate optimized code with summary using the specified model
-        result = await generate_optimized_code_with_summary(
+        result = await generate_optimized_code(
             question=request.question,
             user_code=request.user_code,
             sample_input=request.sample_input,
             sample_output=request.sample_output,
             rag_context=rag_context,
             model="o4-mini-2025-04-16"
-        )
+)
+
         
         # Save interaction for analytics (non-blocking)
         try:

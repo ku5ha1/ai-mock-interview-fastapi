@@ -13,6 +13,7 @@ import json
 logger = logging.getLogger(__name__)
 
 @retry_with_backoff
+@retry_with_backoff
 async def generate_optimized_code(
     question: str,
     user_code: str,
@@ -20,79 +21,62 @@ async def generate_optimized_code(
     sample_output: str,
     rag_context: Optional[str] = None,
     model: str = MODEL_NAME
-) -> str:
+) -> dict:
     """
-    Generate optimized version of user's code.
-    Analyzes code and provides improvements while maintaining functionality.
+    Generate optimized version of user's code (Python/SQL).
+    Always returns JSON with only 'optimized_code'.
     """
     try:
         prompt = f"""
-You are an expert code optimization assistant. Your task is to optimize the given code while maintaining 100% functionality.
+You are a NO-NONSENSE code optimizer for Python or SQL.
 
-CRITICAL REQUIREMENTS:
-1. Return ONLY valid JSON with this exact structure:
-{{
-    "optimized_code": "ONLY executable code here - NO comments, NO explanations, NO docstrings",
-    "optimization_summary": "Detailed explanation of what was optimized"
-}}
+### RULES
+- Return ONLY JSON:
+  {{
+    "optimized_code": "Executable Python/SQL code"
+  }}
+- Code must preserve exact behavior (same input/output).
+- Must run in any Python or SQL editor without errors.
+- Remove comments/docstrings/trailing spaces.
+- If unsure, return original code unchanged.
 
-2. The "optimized_code" field MUST contain:
-   - ONLY executable code
-   - NO comments (no #, //, /* */, ''' or '\""")
-   - NO docstrings
-   - NO explanations
-   - NO markdown
-   - Just pure, runnable code
-
-3. If the code is already optimal, return the same code without any changes
-4. If you cannot optimize the code, return the original code as-is
-5. NEVER return empty code or only comments
-
-INPUT CONTEXT:
 Question: {question}
-Sample Input: {sample_input}
-Sample Output: {sample_output}
+
 User Code:
 {user_code}
 
-OPTIMIZATION GUIDELINES:
-- Maintain exact functionality and output
-- Improve performance, readability, and best practices
-- Use better algorithms, data structures, or patterns
-- Follow language-specific conventions (PEP 8 for Python, etc.)
-- Add proper error handling if missing
-- Optimize for time/space complexity where possible
-
-Return ONLY the JSON object. No other text, no explanations outside the JSON.
+Sample Input: {sample_input}
+Expected Output: {sample_output}
 """
-        
+
         if rag_context:
-            prompt += f"\n\nRELEVANT CONTEXT:\n{rag_context}\n"
-        
+            prompt += f"\nRelevant context:\n{rag_context}\n"
+
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_completion_tokens=1000,
             response_format={"type": "json_object"}
         )
-        
+
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
-        
+
         if not content:
-            logger.error("Empty response from LLM for code optimization")
-            return json.dumps({
-                "optimized_code": user_code,  # Return original code as fallback
-                "optimization_summary": "Could not generate optimization. Returning original code."
-            })
-        
-        return content
+            return {"optimized_code": user_code}
+
+        try:
+            parsed = json.loads(content)
+            if not parsed.get("optimized_code"):
+                return {"optimized_code": user_code}
+            return {"optimized_code": parsed["optimized_code"]}
+        except json.JSONDecodeError:
+            return {"optimized_code": user_code}
 
     except Exception as e:
         logger.error(f"Error optimizing code: {str(e)}")
-        return json.dumps({
-            "optimized_code": user_code,  # Return original code as fallback
-            "optimization_summary": f"Error during optimization: {str(e)}. Returning original code."
-        })
+        return {"optimized_code": user_code}
+
+
 
 @retry_with_backoff
 async def generate_optimization_summary(
