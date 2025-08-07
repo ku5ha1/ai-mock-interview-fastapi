@@ -9,8 +9,69 @@ from services.llm.utils import MODEL_NAME, client, retry_with_backoff, safe_stri
 from typing import Union, Optional
 import logging
 import json
+import ast
+import re
 
 logger = logging.getLogger(__name__)
+
+def validate_python_syntax(code: str) -> bool:
+    """
+    Validate Python syntax using ast.parse.
+    Returns True if syntax is valid, False otherwise.
+    """
+    try:
+        ast.parse(code)
+        return True
+    except SyntaxError as e:
+        logger.warning(f"Python syntax error: {str(e)}")
+        return False
+    except Exception as e:
+        logger.warning(f"Python validation error: {str(e)}")
+        return False
+
+def validate_sql_syntax(code: str) -> bool:
+    """
+    Basic SQL syntax validation using regex patterns.
+    Returns True if basic SQL structure is valid, False otherwise.
+    """
+    try:
+        # Remove comments and normalize whitespace
+        code_clean = re.sub(r'--.*$', '', code, flags=re.MULTILINE)  # Remove single-line comments
+        code_clean = re.sub(r'/\*.*?\*/', '', code_clean, flags=re.DOTALL)  # Remove multi-line comments
+        code_clean = re.sub(r'\s+', ' ', code_clean).strip()
+        
+        # Basic SQL validation patterns
+        sql_patterns = [
+            r'\bSELECT\b',  # Must have SELECT
+            r'\bFROM\b',    # Must have FROM
+            r'[;]?\s*$',    # Optional semicolon at end
+        ]
+        
+        for pattern in sql_patterns:
+            if not re.search(pattern, code_clean, re.IGNORECASE):
+                logger.warning(f"SQL validation failed: missing pattern {pattern}")
+                return False
+        
+        return True
+    except Exception as e:
+        logger.warning(f"SQL validation error: {str(e)}")
+        return False
+
+def validate_code_syntax(code: str, language: str = "python") -> bool:
+    """
+    Validate code syntax based on language.
+    Returns True if syntax is valid, False otherwise.
+    """
+    if not code or not isinstance(code, str):
+        return False
+    
+    if language.lower() == "python":
+        return validate_python_syntax(code)
+    elif language.lower() == "sql":
+        return validate_sql_syntax(code)
+    else:
+        # For unknown languages, assume valid
+        return True
 
 @retry_with_backoff
 @retry_with_backoff
@@ -86,9 +147,22 @@ Return the complete optimized code in JSON format.
 
         try:
             parsed = json.loads(content)
-            if not parsed.get("optimized_code"):
+            optimized_code = parsed.get("optimized_code", "")
+            
+            if not optimized_code:
                 return {"optimized_code": user_code}
-            return {"optimized_code": parsed["optimized_code"]}
+            
+            # Detect language based on code content
+            language = "python"  # Default to python
+            if any(keyword in optimized_code.upper() for keyword in ["SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE"]):
+                language = "sql"
+            
+            # Validate syntax
+            if not validate_code_syntax(optimized_code, language):
+                logger.warning(f"Syntax validation failed for {language} code, returning original code")
+                return {"optimized_code": user_code}
+            
+            return {"optimized_code": optimized_code}
         except json.JSONDecodeError:
             return {"optimized_code": user_code}
 
