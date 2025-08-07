@@ -119,28 +119,27 @@ async def fetch_question_by_module(module_code: str):
             "isDeleted": False
         })
         
-        approach_count = await db.mainquestionbanks.count_documents({
+        # Count non-coding questions (multi-line or case-study)
+        non_coding_count = await db.mainquestionbanks.count_documents({
             "module_code": module_code,
-            "question_type": "approach",
+            "question_type": {"$in": ["multi-line", "case-study"]},
             "isDeleted": False
         })
         
-        logger.info(f"Found {coding_count} coding questions and {approach_count} approach questions for module '{module_code}'")
+        logger.info(f"Found {coding_count} coding questions and {non_coding_count} non-coding (multi-line/case-study) questions for module '{module_code}'")
         
-        if coding_count == 0 and approach_count == 0:
-            logger.error(f"NO QUESTIONS FOUND: No questions found for module_code='{module_code}' (coding: isAvailableForMockInterview=True, approach: question_type='approach')")
+        if coding_count == 0 and non_coding_count == 0:
+            logger.error(f"NO QUESTIONS FOUND: No questions found for module_code='{module_code}' (coding: isAvailableForMockInterview=True, non-coding: question_type in ['multi-line', 'case-study'])")
             raise Exception(f"No questions found for module '{module_code}'")
         
-        # Determine question type to fetch
         import random
-        
-        # If both types available, randomly choose (60% coding, 40% approach)
-        if coding_count > 0 and approach_count > 0:
-            question_type = "coding" if random.random() < 0.6 else "approach"
+        # If both types available, randomly choose (60% coding, 40% non-coding)
+        if coding_count > 0 and non_coding_count > 0:
+            question_type = "coding" if random.random() < 0.6 else "non-coding"
         elif coding_count > 0:
             question_type = "coding"
         else:
-            question_type = "approach"
+            question_type = "non-coding"
         
         logger.info(f"Selected question type: {question_type}")
         
@@ -157,12 +156,12 @@ async def fetch_question_by_module(module_code: str):
                 },
                 {"$sample": {"size": 1}}
             ]
-        else:  # approach
+        else:  # non-coding
             pipeline = [
                 {
                     "$match": {
                         "module_code": module_code,
-                        "question_type": "approach",
+                        "question_type": {"$in": ["multi-line", "case-study"]},
                         "isDeleted": False
                     }
                 },
