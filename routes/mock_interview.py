@@ -11,7 +11,7 @@ from services.db import (
     create_interview_session, get_interview_session, update_interview_session_answer,
     add_follow_up_question, transition_to_coding_phase, save_interview_feedback,
     get_user_interview_sessions, get_personalized_context, get_user_name_from_id, get_enhanced_personalized_context,
-    fetch_question_by_module, get_available_modules  # Add these new imports
+    fetch_question_by_module, get_available_modules 
 )
 from services.interview import get_next_question
 from services.llm.feedback import get_feedback
@@ -151,13 +151,13 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 
                 # Mark session as completed (code will be submitted via POST /feedback)
                 session = await get_interview_session(session_id)
-                session_data = session["meta"]["session_data"]
+                session_data = session["meta"]["session_data"] # type: ignore
                 session_data["status"] = "completed"
                 session_data["current_phase"] = "completed"
                 
                 # Update session
                 db = await get_db()
-                await db.user_ai_interactions.update_one(
+                await db.user_ai_interactions.update_one( # type: ignore
                     {"session_id": session_id},
                     {
                         "$set": {
@@ -172,7 +172,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
         # Update session with user's answer
         await update_interview_session_answer(session_id, answer_request.answer, False)
         session = await get_interview_session(session_id)
-        session_data = session["meta"]["session_data"]
+        session_data = session["meta"]["session_data"] # type: ignore
         
         # Get RAG context for quality check and next question
         retriever = await get_rag_retriever()
@@ -222,7 +222,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             
             # Update the question with clarification count
             db = await get_db()
-            await db.user_ai_interactions.update_one(
+            await db.user_ai_interactions.update_one( # type: ignore
                 {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
                 {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": clarification_count}}
             )
@@ -235,7 +235,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             return {
                 "question": feedback_message,
                 "ready_to_code": False,
-                "language": session["ai_response"].get("language", "")
+                "language": session["ai_response"].get("language", "")  # type: ignore
             }
         
         # If we've reached max clarifications, check if the final answer is good
@@ -251,7 +251,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             if final_answer_quality == "good":
                 # User provided a good answer after clarifications - mark as properly answered
                 db = await get_db()
-                await db.user_ai_interactions.update_one(
+                await db.user_ai_interactions.update_one( # type: ignore
                     {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
                     {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": 0}}
                 )
@@ -265,7 +265,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             logger.info(f"Session {session_id} reached maximum clarifications ({total_clarifications}), forcing progression")
             # Reset clarification count but don't mark as properly answered
             db = await get_db()
-            await db.user_ai_interactions.update_one(
+            await db.user_ai_interactions.update_one( # type: ignore
                 {"session_id": session_id, "meta.session_data.follow_up_questions.question": last_answered_question["question"]},
                 {"$set": {"meta.session_data.follow_up_questions.$.clarification_count": 0}}
             )
@@ -305,7 +305,7 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                     return {
                         "question": next_question,
                         "ready_to_code": False,
-                        "language": session["ai_response"].get("language", "")
+                        "language": session["ai_response"].get("language", "") # type: ignore
                     }
                 except Exception as e:
                     logger.error(f"Error generating next question: {str(e)}", exc_info=True)
@@ -318,9 +318,9 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                     "question": "Great! Now let's move to the coding phase. You can start coding below.",
                     "clarification": True,
                     "ready_to_code": True,
-                    "code_stub": session["ai_response"].get("code_stub", ""),
-                    "language": session["ai_response"].get("language", ""),
-                    "tags": session["ai_response"].get("tags", [])
+                    "code_stub": session["ai_response"].get("code_stub", ""), # type: ignore
+                    "language": session["ai_response"].get("language", ""), # type: ignore 
+                    "tags": session["ai_response"].get("tags", []) # type: ignore
                 }
         
         else:  # approach interview

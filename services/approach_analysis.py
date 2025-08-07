@@ -39,12 +39,12 @@ class ApproachAnalysisService:
             return ""
 
     @retry_with_backoff
-    async def analyze_approach(self, question: str, user_answer: str, user_name: str = None, previous_attempt: dict = None, personalized_guidance: str = None, user_patterns: Any = None) -> Dict[str, Any]:
+    async def analyze_approach(self, question: str, user_answer: str, user_name: str = None, previous_attempt: dict = None, personalized_guidance: str = None, user_patterns: Any = None) -> Dict[str, Any]: # type: ignore
         """
         Analyze user's approach to a question and provide personalized feedback.
-        Uses user history and patterns to tailor the analysis.
+        Uses user history and patterns to tailor the analysis. 
         """
-        try:
+        try: 
             # Get relevant context from RAG system
             context = await self._get_context(question)
 
