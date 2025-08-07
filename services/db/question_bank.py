@@ -101,13 +101,14 @@ async def get_available_topics():
         logger.error(f"Error getting available topics: {str(e)}", exc_info=True)
         return []
 
-async def fetch_question_by_module(module_code: str):
+async def fetch_question_by_module(module_code: str, attempted_questions=None):
     """
     Fetch a random question for a specific module from mainquestionbanks.
     Returns randomly selected question with metadata for interviews.
-    Randomly selects between coding questions (isAvailableForMockInterview=True) and approach questions (question_type="approach").
-    Enhanced error logging for missing data.
+    Excludes questions in attempted_questions if provided.
     """
+    if attempted_questions is None:
+        attempted_questions = []
     try:
         db = await get_db()
         logger.info(f"Fetching question for module: {module_code}")
@@ -116,17 +117,18 @@ async def fetch_question_by_module(module_code: str):
         coding_count = await db.mainquestionbanks.count_documents({
             "module_code": module_code,
             "isAvailableForMockInterview": True,
-            "isDeleted": False
+            "isDeleted": False,
+            "_id": {"$nin": [ObjectId(qid) for qid in attempted_questions if ObjectId.is_valid(qid)]}
         })
         
-        # Count non-coding questions (multi-line or case-study)
         non_coding_count = await db.mainquestionbanks.count_documents({
             "module_code": module_code,
             "question_type": {"$in": ["multi-line", "case-study"]},
-            "isDeleted": False
+            "isDeleted": False,
+            "_id": {"$nin": [ObjectId(qid) for qid in attempted_questions if ObjectId.is_valid(qid)]}
         })
         
-        logger.info(f"Found {coding_count} coding questions and {non_coding_count} non-coding (multi-line/case-study) questions for module '{module_code}'")
+        logger.info(f"Found {coding_count} coding questions and {non_coding_count} non-coding (multi-line/case-study) questions for module '{module_code}' (excluding attempted)")
         
         if coding_count == 0 and non_coding_count == 0:
             logger.error(f"NO QUESTIONS FOUND: No questions found for module_code='{module_code}' (coding: isAvailableForMockInterview=True, non-coding: question_type in ['multi-line', 'case-study'])")
@@ -149,9 +151,10 @@ async def fetch_question_by_module(module_code: str):
                 {
                     "$match": {
                         "module_code": module_code,
-                        "question_type": "coding",  # Explicitly check question_type
+                        "question_type": "coding",
                         "isAvailableForMockInterview": True,
-                        "isDeleted": False
+                        "isDeleted": False,
+                        "_id": {"$nin": [ObjectId(qid) for qid in attempted_questions if ObjectId.is_valid(qid)]}
                     }
                 },
                 {"$sample": {"size": 1}}
@@ -162,7 +165,8 @@ async def fetch_question_by_module(module_code: str):
                     "$match": {
                         "module_code": module_code,
                         "question_type": {"$in": ["multi-line", "case-study"]},
-                        "isDeleted": False
+                        "isDeleted": False,
+                        "_id": {"$nin": [ObjectId(qid) for qid in attempted_questions if ObjectId.is_valid(qid)]}
                     }
                 },
                 {"$sample": {"size": 1}}

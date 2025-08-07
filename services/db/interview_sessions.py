@@ -120,7 +120,8 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
                         "status": "not_started" if interview_type == "coding" else "not_applicable",
                         "code": "",
                         "output": ""
-                    }
+                    },
+                    "attempted_questions": [str(base_question_id)] if base_question_id else []
                 }
             }
         }
@@ -202,10 +203,11 @@ async def update_interview_session_answer(session_id: str, answer: str, is_clari
         logger.error(f"Error updating interview session: {str(e)}", exc_info=True)
         raise
 
-async def add_follow_up_question(session_id: str, question: str):
+async def add_follow_up_question(session_id: str, question: str, question_id: str = None):
     """
     Add a new follow-up question to the session.
     Increments question count and updates session state.
+    Now also tracks attempted questions by ID (or text if ID not available).
     """
     try:
         db = await get_db()
@@ -229,18 +231,23 @@ async def add_follow_up_question(session_id: str, question: str):
         session_data["follow_up_questions"].append(new_question)
         session_data["total_questions"] += 1
         
+        # Track attempted questions by ID or text
+        if "attempted_questions" not in session_data:
+            session_data["attempted_questions"] = []
+        if question_id:
+            if question_id not in session_data["attempted_questions"]:
+                session_data["attempted_questions"].append(question_id)
+        else:
+            # Fallback: use question text if ID not available
+            if question not in session_data["attempted_questions"]:
+                session_data["attempted_questions"].append(question)
+        
         # Update the document
         await db.user_ai_interactions.update_one(
             {"session_id": session_id},
-            {
-                "$set": {
-                    "meta.session_data": session_data,
-                    "timestamp": datetime.utcnow()
-                }
-            }
+            {"$set": {"meta.session_data": session_data, "timestamp": datetime.utcnow()}}
         )
-        
-        logger.info(f"Added follow-up question to session: {session_id}")
+        logger.info(f"Added follow-up question and updated attempted_questions for session: {session_id}")
     except Exception as e:
         logger.error(f"Error adding follow-up question: {str(e)}", exc_info=True)
         raise

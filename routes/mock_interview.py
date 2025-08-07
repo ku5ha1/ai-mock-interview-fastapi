@@ -42,7 +42,7 @@ async def init_interview(init_data: InterviewInit):
         session_id = f"{init_data.user_id}_{init_data.module_code}_{datetime.now().timestamp()}"
         
         # Fetch question by module code
-        base_question_data = await fetch_question_by_module(init_data.module_code)
+        base_question_data = await fetch_question_by_module(init_data.module_code, attempted_questions=[])
         
         # Get RAG context for better question generation
         retriever = await get_rag_retriever()
