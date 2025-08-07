@@ -58,7 +58,7 @@ async def check_single_answer_quality(question: str, answer: str, topic: str, ra
     """
     try:
         prompt = f"""
-Review the following answer to the {topic} interview question.
+Review the following answer to the interview question.
 Evaluate based on:
 - Is the answer relevant to the question?
 - Does it demonstrate reasonable thinking or attempt to solve the problem?

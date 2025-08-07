@@ -211,7 +211,10 @@ async def fetch_question_by_module(module_code: str, attempted_questions=None):
             "question": question_doc.get("question", ""),
             "difficulty": question_doc.get("level", ""),
             "example": question_doc.get("description", ""),
-            "tags": [t["topic_name"] for t in question_doc.get("topics", [])],
+            "tags": [
+    t["topic_name"] if isinstance(t, dict) and "topic_name" in t else t
+    for t in question_doc.get("topics", [])
+],
             "module_code": question_doc.get("module_code", ""),
             "topic_code": question_doc.get("topic_code", ""),
             "interview_type": question_type

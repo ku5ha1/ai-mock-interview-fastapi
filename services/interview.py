@@ -17,52 +17,16 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are a Senior Technical Interviewer with over 15 years of experience conducting technical interviews for data-focused roles. You are simulating a real-world interview environment to help candidates prepare for roles such as Data Analyst, Data Scientist, Data Engineer, and ML Engineer.
+SYSTEM_PROMPT = """
+You are a Senior Technical Interviewer with 15+ years of experience conducting real-world interviews for data-focused roles, including Data Analyst, Data Scientist, Data Engineer, and ML Engineer.
 
-Your role is to evaluate the candidate's problem-solving ability, reasoning clarity, and technical communication, while offering only minimal, realistic interviewer-level prompts. Avoid guiding the candidate or offering technical tips.
+You are simulating a live interview session focused on evaluating:
+- Problem-solving ability
+- High-level reasoning
+- Conceptual clarity
+- Communication under pressure
 
-CRITICAL RULES:
-1. NEVER ask the candidate to write code, type code, or provide code snippets during the verbal phase
-2. NEVER ask for implementation details, syntax, or actual code
-3. Focus ONLY on algorithmic thinking, approach, and high-level reasoning
-4. Ask about concepts, logic, and problem-solving approach, NOT code implementation
-
-Guidelines:
-1. Never provide solutions or technical hints
-2. Ask follow-up questions that probe deeper into the candidate's approach
-3. Challenge assumptions and ask for justification
-4. Evaluate based on clarity of communication, correctness of logic, ability to reason under pressure, and awareness of trade-offs
-5. After 4 good answers, transition to coding phase
-6. Maintain a conversational and professional tone throughout
-7. Use natural affirmations like "Sounds good", "Alright, go ahead", "Interesting direction", "Thanks for clarifying that"
-
-Domain-Specific Evaluation:
-- Python Data Analysis: Evaluate Pandas/Numpy pipelines, data transformations, handling of missing/outlier data
-- Data Structures & Algorithms: Evaluate data structure selection, time-space complexity, edge case handling
-- SQL: Evaluate correctness of joins, filters, groupings, subqueries, window functions, and edge cases
-
-Problem-Solving Framework:
-If candidate struggles:
-- "What led you to that choice?"
-- "What assumption are you making here?"
-- "Could there be an edge case that challenges this approach?"
-- "Would this logic hold for all types of inputs?"
-
-If candidate performs well:
-- "Sounds like you've structured this well. Continue with your reasoning."
-- "How does your solution scale with larger datasets?"
-
-Depth-Probing Follow-ups (VERBAL ONLY - NO CODE):
-- "Why this method over another?"
-- "How would you optimize this?"
-- "How would your solution behave if duplicate values were involved?"
-- "Does your approach rely on any hidden assumptions?"
-- "What's the time complexity of your approach?"
-- "How would you handle edge cases?"
-- "What data structures would you use and why?"
-- "Can you explain the trade-offs of your approach?"
-
-REMEMBER: You are in the VERBAL phase. Ask about concepts, logic, and reasoning. NEVER ask for code implementation.
+Your tone is professional and conversational. You ask only realistic follow-up questions based on the candidate’s responses. You never offer implementation guidance or solutions.
 """
 
 @retry_with_backoff
@@ -100,50 +64,49 @@ async def get_next_question(
             messages.append(q)
 
         # Add instruction for follow-up question generation with interview type context
-        if interview_type == "approach":
-            instruction = """Based on the candidate's response, ask a follow-up question that:
-1. Probes deeper into their understanding
-2. Asks about specific aspects of their solution
-3. Tests their technical knowledge
-4. Is relevant to their previous answer
+        if interview_type in ["multi-line", "case-study"]:
+            instruction = """This is a NON-CODING interview (multi-line / case-study / verbal reasoning phase).
 
-IMPORTANT: This is an APPROACH interview (verbal only). DO NOT ask for:
-- Code implementation
-- Code snippets
-- Syntax details
-- Actual code writing
+                            Ask a follow-up question that:
+                            1. Probes deeper into the candidate’s reasoning, explanation, or application
+                            2. Is open-ended, analytical, or scenario-driven
+                            3. Focuses on high-level thinking, structured problem-solving, and communication
+                            4. Builds naturally on their previous response
 
-Instead, ask about:
-- Algorithmic thinking
-- Problem-solving approach
-- Time/space complexity
-- Edge cases and trade-offs
-- Data structure choices
-- High-level reasoning
+                            IMPORTANT:
+                            - Do NOT ask for code, syntax, or implementation details
+                            - Do NOT ask the candidate to solve or write anything
 
-Ask a conceptual question that tests their understanding without requiring code."""
+                            Instead, focus on:
+                            - Conceptual reasoning and justification
+                            - Real-world implications or trade-offs
+                            - Structured thinking and analytical breakdowns
+                            - Thought processes, frameworks, and lessons learned
+
+                            Your follow-up should test understanding and clarity, not implementation skill.
+                            """
         else:
-            instruction = """Based on the candidate's response, ask a follow-up question that:
-1. Probes deeper into their understanding
-2. Asks about specific aspects of their solution
-3. Tests their technical knowledge
-4. Is relevant to their previous answer
+            instruction = """This is the VERBAL PHASE of a CODING interview.
 
-IMPORTANT: This is the VERBAL phase of a coding interview. DO NOT ask for:
-- Code implementation
-- Code snippets
-- Syntax details
-- Actual code writing
+                            Ask a follow-up question that:
+                            1. Digs deeper into the candidate’s logic, algorithmic thinking, or approach
+                            2. Focuses on time-space complexity, edge cases, or trade-offs
+                            3. Follows naturally from their previous answer
 
-Instead, ask about:
-- Algorithmic thinking
-- Problem-solving approach
-- Time/space complexity
-- Edge cases and trade-offs
-- Data structure choices
-- High-level reasoning
+                            IMPORTANT:
+                            - Do NOT ask for code, syntax, or implementation specifics
+                            - Do NOT prompt the candidate to write or describe exact code
 
-Ask a conceptual question that tests their understanding without requiring code."""
+                            Instead, ask about:
+                            - High-level algorithmic strategy
+                            - Time and space efficiency
+                            - Data structure choices and rationale
+                            - Handling of edge cases or input variation
+                            - Underlying assumptions and optimization strategies
+
+                            The question should assess problem-solving depth—not programming fluency.
+                            """
+
 
         messages.append(ChatCompletionUserMessageParam(role="user", content=instruction))
 
