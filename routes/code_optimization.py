@@ -72,7 +72,7 @@ async def optimize_code(request: CodeOptimizationRequest):
     Optimize user's code with improvements and explanations.
     Uses RAG context to provide relevant optimization suggestions.
     Returns only the optimized code in the response, with all comments removed.
-    Uses the 'o4-mini-2025-04-16' model for code optimization.
+    Uses the 'gpt-4o-mini-2024-07-18' model for code optimization.
     """
     logger = logging.getLogger(__name__)
     
@@ -82,23 +82,16 @@ async def optimize_code(request: CodeOptimizationRequest):
         raise HTTPException(status_code=404, detail="User not found")
     
     try:
-        # Get RAG context for relevant optimization suggestions
-        retriever = await get_rag_retriever()
-        rag_context = ""
-        if retriever is not None:
-            context_chunks = await retriever.retrieve_context(request.question)
-            rag_context = "\n\n".join(context_chunks)
-        
-        # Generate optimized code with summary using the specified model
+        # RAG context retrieval disabled
+        # Generate optimized code using only user input and no external context
         result = await generate_optimized_code(
             question=request.question,
+            description=request.description,
             user_code=request.user_code,
             sample_input=request.sample_input,
             sample_output=request.sample_output,
-            rag_context=rag_context,
-            model="o4-mini-2025-04-16"
-)
-
+            model="gpt-4o-mini-2024-07-18"
+        )
         
         # Save interaction for analytics (non-blocking)
         try:

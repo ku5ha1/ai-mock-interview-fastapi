@@ -62,6 +62,7 @@ class CodeOptimizationRequest(BaseModel):
     Includes sample input/output for testing optimized code.
     """
     question: str
+    description: str
     user_code: str
     sample_input: str
     sample_output: str

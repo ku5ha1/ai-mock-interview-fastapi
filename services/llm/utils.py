@@ -33,7 +33,7 @@ client = openai.AsyncOpenAI(api_key=openai_api_key)
 logger.info("Shared OpenAI client initialized")
 
 # === Model Name ===
-MODEL_NAME = "gpt-4o-mini"
+MODEL_NAME = "gpt-4o-mini-2024-07-18"
 
 PROGRESS_API_BASE_URL = os.getenv("PROGRESS_API_BASE_URL")
 

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @retry_with_backoff
 async def generate_optimized_code(
     question: str,
+    description: str,
     user_code: str,
     sample_input: str,
     sample_output: str,
@@ -28,25 +29,44 @@ async def generate_optimized_code(
     """
     try:
         prompt = f"""
-You are a NO-NONSENSE code optimizer for Python or SQL.
+You are a code optimizer. Your task is to optimize the given code while preserving its EXACT functionality and structure.
 
-### RULES
-- Return ONLY JSON:
-  {{
-    "optimized_code": "Executable Python/SQL code"
-  }}
-- Code must preserve exact behavior (same input/output).
-- Must run in any Python or SQL editor without errors.
-- Remove comments/docstrings/trailing spaces.
-- If unsure, return original code unchanged.
+### CRITICAL RULES
+- RETURN ONLY JSON FORMAT: {{"optimized_code": "complete optimized code"}}
+- PRESERVE EXACT BEHAVIOR - same inputs must produce same outputs
+- MAINTAIN CODE STRUCTURE - keep functions, classes, logic flow intact
+- PRESERVE READABILITY - keep proper indentation and formatting
+- REMOVE test cases, sample usage code, and debug prints
+- KEEP output statements that show final results (e.g., print statements showing learned parameters)
+- REMOVE unnecessary comments, docstrings, debug prints, and trailing whitespace
+- DO NOT TRUNCATE CODE - return the complete optimized function/class
+- DO NOT CHANGE variable names, function names, or logic flow unless it improves performance
+- IF code is already optimal, return the ORIGINAL code unchanged
+- ENSURE CODE IS EXECUTABLE and complete
+- RETURN THE CORE FUNCTION/CLASS WITH FINAL OUTPUT - keep result display statements
 
+### PROBLEM CONTEXT
 Question: {question}
+Description: {description}
 
-User Code:
+### USER-SUBMITTED CODE
 {user_code}
 
+### REFERENCE BEHAVIOR
 Sample Input: {sample_input}
 Expected Output: {sample_output}
+
+### OPTIMIZATION INSTRUCTIONS
+1. Keep the exact same function signature and logic
+2. Optimize only for performance, readability, or best practices
+3. Ensure the complete code is returned (no truncation)
+4. Maintain proper Python/SQL syntax and formatting
+5. If no meaningful optimization is possible, return the original code
+6. REMOVE test cases and sample usage code
+7. KEEP output statements that show final computation results
+8. Return the core function/class with result display
+
+Return the complete optimized code in JSON format.
 """
 
         if rag_context:
@@ -55,7 +75,7 @@ Expected Output: {sample_output}
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=1000,
+            max_completion_tokens=2000,  # Increased token limit
             response_format={"type": "json_object"}
         )
 
