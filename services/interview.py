@@ -61,7 +61,7 @@ async def get_next_question(
         
         # Add conversation history
         for q in questions:
-            messages.append(q)
+            messages.append(q)  #type: ignore
 
         # Add instruction for follow-up question generation with interview type context
         if interview_type in ["multi-line", "case-study"]:
