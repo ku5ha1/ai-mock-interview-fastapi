@@ -18,8 +18,8 @@ async def get_enhanced_personalized_context(user_id: str, current_topic: str = N
     Analyzes patterns and generates personalized guidance for interviews.
     """
     try:
-        # Get recent interactions (last 15 for better pattern analysis)
-        recent_interactions = await get_user_interaction_history(user_id, limit=15)
+        # Get recent interactions (reduced from 15 to 10 for better performance)
+        recent_interactions = await get_user_interaction_history(user_id, limit=10)
         
         # Get progress data if question_id provided
         progress_data = None
@@ -71,8 +71,8 @@ async def extract_interaction_patterns(interactions: list, current_topic: str = 
         total_sessions = 0
         response_lengths = []
         
-        # Analyze each interaction
-        for interaction in interactions:
+        # Analyze each interaction (optimized for performance)
+        for interaction in interactions[:8]:  # Limit to 8 interactions for better performance
             endpoint = interaction.get("endpoint", "")
             patterns["endpoint_usage"][endpoint] = patterns["endpoint_usage"].get(endpoint, 0) + 1
             
@@ -84,22 +84,22 @@ async def extract_interaction_patterns(interactions: list, current_topic: str = 
                 if session_data.get("status") == "completed":
                     completed_sessions += 1
                 
-                # Extract topic
+                # Extract topic (limit to avoid excessive processing)
                 topic = session_data.get("topic")
-                if topic and topic not in patterns["recent_topics"]:
+                if topic and topic not in patterns["recent_topics"] and len(patterns["recent_topics"]) < 5:
                     patterns["recent_topics"].append(topic)
                 
-                # Extract feedback insights
+                # Extract feedback insights (limit data for performance)
                 feedback = session_data.get("feedback")
                 if feedback:
                     if "points_to_address" in feedback:
-                        patterns["common_weaknesses"].extend(feedback["points_to_address"][:2])  # Limit to top 2
+                        patterns["common_weaknesses"].extend(feedback["points_to_address"][:1])  # Reduced from 2 to 1
                     if "positive_points" in feedback:
-                        patterns["strengths"].extend(feedback["positive_points"][:2])  # Limit to top 2
+                        patterns["strengths"].extend(feedback["positive_points"][:1])  # Reduced from 2 to 1
                     if "score" in feedback:
                         patterns["recent_scores"].append(feedback["score"])
                 
-                # Track topic-specific performance
+                # Track topic-specific performance (only if current topic matches)
                 if topic and topic == current_topic:
                     if feedback:
                         if "score" in feedback:
@@ -114,15 +114,15 @@ async def extract_interaction_patterns(interactions: list, current_topic: str = 
                 if "score" in ai_response:
                     patterns["recent_scores"].append(ai_response["score"])
                 if "areas_for_improvement" in ai_response:
-                    patterns["common_weaknesses"].extend(ai_response["areas_for_improvement"][:2])
+                    patterns["common_weaknesses"].extend(ai_response["areas_for_improvement"][:1])  # Reduced from 2 to 1
                 if "strengths" in ai_response:
-                    patterns["strengths"].extend(ai_response["strengths"][:2])
+                    patterns["strengths"].extend(ai_response["strengths"][:1])  # Reduced from 2 to 1
             
-            # Calculate response length from input data
+            # Calculate response length from input data (limit processing)
             input_data = interaction.get("input", {})
-            if "user_answer" in input_data:
+            if "user_answer" in input_data and len(response_lengths) < 5:  # Limit to 5 samples
                 response_lengths.append(len(input_data["user_answer"].split()))
-            elif "answer" in input_data:
+            elif "answer" in input_data and len(response_lengths) < 5:  # Limit to 5 samples
                 response_lengths.append(len(input_data["answer"].split()))
         
         # Calculate metrics

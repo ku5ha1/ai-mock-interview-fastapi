@@ -26,14 +26,23 @@ class ApproachAnalysisService:
     async def _get_context(self, question: str, top_k: int = 2) -> str:
         """
         Retrieve relevant context from RAG system for question analysis.
+        Optimized for performance with reduced top_k.
         """
         try:
             retriever = await get_rag_retriever()
             if retriever is None:
                 logger.warning("RAGRetriever not initialized")
                 return ""
+            
+            # Use smaller top_k for better performance
             context_chunks = await retriever.retrieve_context(question, top_k=top_k)
-            return "\n\n".join(context_chunks)
+            
+            # Limit context length for better performance
+            context = "\n\n".join(context_chunks)
+            if len(context) > 1000:  # Limit context to 1000 characters
+                context = context[:1000] + "..."
+            
+            return context
         except Exception as e:
             logger.error(f"Error retrieving context: {str(e)}")
             return ""
@@ -45,55 +54,15 @@ class ApproachAnalysisService:
         Uses user history and patterns to tailor the analysis. 
         """
         try: 
-            # Get relevant context from RAG system
-            context = await self._get_context(question)
+            # Get relevant context from RAG system (reduced top_k for performance)
+            context = await self._get_context(question, top_k=2)
 
-            # Build personalized context from user history
-            extra_context = ""
-            if previous_attempt:
-                extra_context += f"The candidate previously attempted this question. Their answer was: {previous_attempt.get('answer', '')}. The result was: {previous_attempt.get('result', '')}. The output was: {previous_attempt.get('output', '')}. Please naturally incorporate this information into your feedback, comparing the current and previous attempts if relevant.\n"
-            
-            # Add personalized guidance and user patterns
-            if personalized_guidance or user_patterns:
-                extra_context += "PERSONALIZATION CONTEXT - Use this to tailor your feedback specifically to this candidate:\n"
-                
-                if user_patterns:
-                    patterns = user_patterns
-                    extra_context += f"- Performance: Average score {patterns.get('average_score', 'N/A')}/10, {patterns.get('completion_rate', 0)*100:.0f}% session completion rate\n"
-                    extra_context += f"- Recent topics: {', '.join(patterns.get('recent_topics', []))}\n"
-                    extra_context += f"- Performance trend (last 5): {patterns.get('performance_trend', [])}\n"
-                    
-                    # Add topic-specific performance data
-                    if patterns.get('topic_specific_performance'):
-                        topic_perf = patterns['topic_specific_performance']
-                        if topic_perf.get('scores'):
-                            avg_topic = sum(topic_perf['scores']) / len(topic_perf['scores'])
-                            extra_context += f"- Topic-specific average: {avg_topic:.1f}/10\n"
-                    
-                    # Add question-specific history
-                    if patterns.get('question_specific_history'):
-                        q_history = patterns['question_specific_history']
-                        extra_context += f"- Previous attempt at this question: Result {q_history.get('previous_result', 'N/A')}\n"
-                    
-                    if patterns.get('strengths'):
-                        extra_context += f"- Demonstrated strengths: {', '.join(patterns['strengths'][:3])}\n"
-                    
-                    if patterns.get('common_weaknesses'):
-                        extra_context += f"- Areas needing improvement: {', '.join(patterns['common_weaknesses'][:3])}\n"
-                    
-                    # Add response pattern analysis
-                    avg_length = patterns.get('avg_response_length', 0)
-                    if avg_length > 0:
-                        extra_context += f"- Average response length: {avg_length:.0f} words\n"
-                
-            if personalized_guidance:
-                # Clean up the personalized guidance to be more concise
-                guidance = personalized_guidance.replace("You often struggle with:", "Areas for improvement:").replace("Your strengths include:", "Strengths:").replace("Keep leveraging these in your answers.", "")
-                extra_context += f"- Personalized guidance: {guidance}\n"
+            # Build personalized context from user history (optimized)
+            extra_context = self._build_optimized_context(
+                previous_attempt, personalized_guidance, user_patterns
+            )
 
-            extra_context += "IMPORTANT: Reference these patterns in your feedback. Connect current performance to past trends. Be specific about how they're improving or repeating patterns. Use the performance trend and topic-specific data to provide targeted advice.\n\n"
-
-            # Build final prompt with personalized context
+            # Build final prompt with personalized context (optimized)
             name_reference = f"{user_name}" if user_name else "the candidate"
             prompt = f"""
 You are an expert data science and AI interviewer evaluating {name_reference}'s approach to a technical question.
@@ -102,81 +71,53 @@ You are an expert data science and AI interviewer evaluating {name_reference}'s 
 
 IMPORTANT: Use the personalization data above to tailor your feedback specifically to this candidate's demonstrated patterns, strengths, and weaknesses. Reference their performance history and learning patterns throughout your evaluation.
 
-The goal is to simulate the feedback they'd get from a top-tier interviewer. Your feedback should reflect how they would be judged in a real technical interview.
-
----
-
 Your Evaluation Framework:
-
-Assess the candidate's response using these 6 structured feedback sections:
 
 ### 1. Structure & Clarity  
 - Did they break down the problem logically and clearly?  
 - Did they show a step-by-step approach or just brainstorm loosely?  
-- Interviewers want clarity of thought, not speed.
 
 ### 2. 🚫 What Was Missing  
 - What critical step or concept was not covered?  
 - Only include what would be considered a key miss in an actual interview.  
-- For example: missing evaluation metric in ML, not defining business metric in product sense, not checking nulls in SQL.
 
 ### 3. 👁️ Blind Spots  
 - Subtle but important things they missed that top candidates usually catch.  
-- For example: ignoring baseline model in ML, ignoring tie behavior in SQL, ignoring acquisition in product sense.  
-- These often cost candidates the offer.
+- These often cost candidates the offer.  
 
 ### 4. Historical Tracking  
 - Based on past attempts, did they improve or repeat the same mistakes?  
-- Pull in relevant feedback only. If none apply, say "N/A".
+- If none apply, say "N/A".  
 
-### 5. Interview Variations / Scenario Extensions  
-- Suggest how the question could be modified in real interviews.  
-- Offer 1–2 variations and how their approach would need to adapt.
+### 5. Interview Variations  
+- Suggest 1–2 variations and how their approach would need to adapt.  
 
-### 6.  Final Interview Tip  
+### 6. Final Interview Tip  
 - End with a crisp, interview-specific coaching insight they can apply to future questions.  
-- It should be tactical and relevant to this module (ML, SQL, Product, Guesstimate, etc.)
 
----
+Current Question: {question}
+Candidate's Response: {user_answer}
 
-Current Question Info:
-**Module:** [e.g., SQL / ML / Product Sense / Guesstimate]  
-**Topic:** [e.g., Model Evaluation]  
-**Subtopic:** [e.g., Precision Drop]  
-**Question:**  
-{question}
+Context: {context}
 
-**Candidate's Response:**  
-{user_answer}
-
----
-
-Generate the 6 sections. Do not explain them. Keep it sharp, honest, and professional—like a real interviewer giving expert-level critique.
-
-Context:
-{context}
-
----
-
-Return ONLY valid JSON in the following format:
+Return ONLY valid JSON:
 {{
     "feedback": "...",
     "strengths": [...],
     "areas_for_improvement": [...],
     "score": number
 }}
-DO NOT return markdown, explanations, or any text outside the JSON object.
 """
 
-            # Generate analysis using AI
+            # Generate analysis using AI (reduced max_tokens for performance)
             response = await self.client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
-                    {"role": "system", "content": f"You are an expert interviewer providing intelligent, contextual feedback for {name_reference}. CRITICAL: You must use the provided personalization data to tailor your feedback. Reference their specific strengths, weaknesses, and performance patterns throughout your evaluation. Connect current performance to their learning history. This is not optional - it's essential for providing truly personalized feedback."},
+                    {"role": "system", "content": f"You are an expert interviewer providing intelligent, contextual feedback for {name_reference}. Use the provided personalization data to tailor your feedback. Reference their specific strengths, weaknesses, and performance patterns."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=800  # Reduced from 1000 for better performance
             )
 
             content = safe_strip(getattr(response.choices[0].message, 'content', None))
@@ -189,3 +130,31 @@ DO NOT return markdown, explanations, or any text outside the JSON object.
         except Exception as e:
             logger.error(f"Error analyzing approach: {str(e)}")
             return get_fallback_analysis()
+    
+    def _build_optimized_context(self, previous_attempt: dict = None, personalized_guidance: str = None, user_patterns: Any = None) -> str:
+        """
+        Build optimized context string to reduce prompt length and improve performance.
+        """
+        extra_context = ""
+        
+        if previous_attempt:
+            extra_context += f"Previous attempt: Answer: {previous_attempt.get('answer', '')[:100]}... Result: {previous_attempt.get('result', '')}. Output: {previous_attempt.get('output', '')[:100]}...\n"
+        
+        if user_patterns:
+            patterns = user_patterns
+            extra_context += f"Performance: Avg score {patterns.get('average_score', 'N/A')}/10, {patterns.get('completion_rate', 0)*100:.0f}% completion\n"
+            extra_context += f"Recent topics: {', '.join(patterns.get('recent_topics', [])[:3])}\n"
+            extra_context += f"Performance trend: {patterns.get('performance_trend', [])[-3:]}\n"
+            
+            if patterns.get('strengths'):
+                extra_context += f"Strengths: {', '.join(patterns['strengths'][:2])}\n"
+            
+            if patterns.get('common_weaknesses'):
+                extra_context += f"Areas for improvement: {', '.join(patterns['common_weaknesses'][:2])}\n"
+        
+        if personalized_guidance:
+            guidance = personalized_guidance.replace("You often struggle with:", "Areas:").replace("Your strengths include:", "Strengths:").replace("Keep leveraging these in your answers.", "")
+            extra_context += f"Guidance: {guidance[:200]}...\n"
+        
+        extra_context += "Use this data to tailor feedback. Connect current performance to past trends.\n\n"
+        return extra_context
