@@ -278,6 +278,10 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             properly_answered_questions = sum(1 for q in session_data["follow_up_questions"] 
                                             if q.get("answer") and q.get("clarification_count", 0) == 0)
             
+            # Debug logging to understand the issue
+            logger.info(f"Session {session_id}: Debug - follow_up_questions: {[{'question': q.get('question', '')[:50], 'answer': q.get('answer', '')[:50], 'clarification_count': q.get('clarification_count', 0)} for q in session_data['follow_up_questions']]}")
+            logger.info(f"Session {session_id}: Debug - properly_answered_questions calculation: {[(q.get('question', '')[:50], q.get('answer', '')[:50], q.get('clarification_count', 0), bool(q.get('answer') and q.get('clarification_count', 0) == 0)) for q in session_data['follow_up_questions']]}")
+            
             # Fallback: If user has answered many questions but none are properly answered, 
             # allow progression after a reasonable number of attempts
             if properly_answered_questions == 0 and total_questions >= 8:
@@ -292,14 +296,22 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 if session_data.get("questions"):
                     base_question = session_data["questions"][0]
                     conversation_history.append({"role": "assistant", "content": base_question["question"]})
+                    logger.info(f"Session {session_id}: Added base question to conversation: {base_question['question'][:100]}...")
 
                 for q in session_data["follow_up_questions"]:
                     conversation_history.append({"role": "assistant", "content": q["question"]})
+                    logger.info(f"Session {session_id}: Added follow-up question to conversation: {q['question'][:100]}...")
                     if q.get("answer"):
                         conversation_history.append({"role": "user", "content": q["answer"]})
+                        logger.info(f"Session {session_id}: Added user answer to conversation: {q['answer'][:100]}...")
+                
+                logger.info(f"Session {session_id}: Debug - conversation_history: {conversation_history}")
+                logger.info(f"Session {session_id}: Debug - conversation_history length: {len(conversation_history)}")
                 
                 try:
+                    logger.info(f"Session {session_id}: Calling get_next_question with topic={session_data['topic']}, interview_type={interview_type}")
                     next_question = await get_next_question(conversation_history, topic=session_data["topic"], rag_context=rag_context, interview_type=interview_type)
+                    logger.info(f"Session {session_id}: Generated next question: {next_question[:100]}...")
                     await add_follow_up_question(session_id, next_question)
                     
                     return {
@@ -328,6 +340,10 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
             properly_answered_questions = sum(1 for q in session_data["follow_up_questions"] 
                                             if q.get("answer") and q.get("clarification_count", 0) == 0)
             
+            # Debug logging to understand the issue
+            logger.info(f"Session {session_id}: Debug - follow_up_questions: {[{'question': q.get('question', '')[:50], 'answer': q.get('answer', '')[:50], 'clarification_count': q.get('clarification_count', 0)} for q in session_data['follow_up_questions']]}")
+            logger.info(f"Session {session_id}: Debug - properly_answered_questions calculation: {[(q.get('question', '')[:50], q.get('answer', '')[:50], q.get('clarification_count', 0), bool(q.get('answer') and q.get('clarification_count', 0) == 0)) for q in session_data['follow_up_questions']]}")
+            
             # Fallback: If user has answered many questions but none are properly answered, 
             # allow progression after a reasonable number of attempts
             if properly_answered_questions == 0 and total_questions >= 10:
@@ -342,14 +358,22 @@ async def submit_answer(answer_request: AnswerRequest = Body(...)):
                 if session_data.get("questions"):
                     base_question = session_data["questions"][0]
                     conversation_history.append({"role": "assistant", "content": base_question["question"]})
+                    logger.info(f"Session {session_id}: Added base question to conversation: {base_question['question'][:100]}...")
 
                 for q in session_data["follow_up_questions"]:
                     conversation_history.append({"role": "assistant", "content": q["question"]})
+                    logger.info(f"Session {session_id}: Added follow-up question to conversation: {q['question'][:100]}...")
                     if q.get("answer"):
                         conversation_history.append({"role": "user", "content": q["answer"]})
+                        logger.info(f"Session {session_id}: Added user answer to conversation: {q['answer'][:100]}...")
+                
+                logger.info(f"Session {session_id}: Debug - conversation_history: {conversation_history}")
+                logger.info(f"Session {session_id}: Debug - conversation_history length: {len(conversation_history)}")
                 
                 try:
+                    logger.info(f"Session {session_id}: Calling get_next_question with topic={session_data['topic']}, interview_type={interview_type}")
                     next_question = await get_next_question(conversation_history, topic=session_data["topic"], rag_context=rag_context, interview_type=interview_type)
+                    logger.info(f"Session {session_id}: Generated next question: {next_question[:100]}...")
                     await add_follow_up_question(session_id, next_question)
                     
                     return {

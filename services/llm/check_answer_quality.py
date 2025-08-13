@@ -58,23 +58,25 @@ async def check_single_answer_quality(question: str, answer: str, topic: str, ra
     """
     try:
         prompt = f"""
-Review the following answer to the interview question.
-Evaluate based on:
-- Is the answer relevant to the question?
-- Does it demonstrate reasonable thinking or attempt to solve the problem?
-- For algorithmic questions: Does it show understanding of the problem and propose a reasonable approach?
+You are an interviewer evaluating a candidate's answer.  
+Your output must be exactly one word: either "good" or "bad" (lowercase, no extra text).
 
-IMPORTANT: Be very lenient. Only mark as 'bad' if the answer is:
-- Completely empty or very short (less than 10 words)
-- Completely irrelevant to the question
-- Nonsensical or gibberish
-- Just "I don't know" without any attempt
+Strict evaluation rules:
+1. First, check if the answer is meaningfully related to the given question.  
+   - If it is unrelated, random, nonsensical, or gibberish → mark as "bad".
+2. If related, check if the answer shows at least minimal understanding or effort.  
+   - For algorithmic/problem-solving questions, even a basic or partial approach counts as "good".
+3. Be lenient about completeness and correctness — only reject if:
+   - Answer is empty or under 10 words without value.
+   - Answer is "I don't know" or equivalent, without any attempt.
+   - Answer is completely off-topic or meaningless.
 
-For algorithmic thinking questions, even a basic approach or partial understanding should be marked as 'good'.
+Focus on relevance first — unrelated answers are always "bad".
 
-Question: {question}
+Question: {question}  
 Answer: {answer}
 """
+
         # Add RAG context if available for better evaluation
         if rag_context:
             prompt += f"\nReference Context:\n{rag_context}\n"

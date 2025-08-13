@@ -111,7 +111,8 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
                             "question": first_follow_up,
                             "answer": "",
                             "timestamp": datetime.utcnow(),
-                            "question_type": "follow_up"
+                            "question_type": "follow_up",
+                            "clarification_count": 0  # Initialize clarification counter for first question
                         }
                     ],
                     "clarifications": [],
@@ -177,15 +178,23 @@ async def update_interview_session_answer(session_id: str, answer: str, is_clari
             if not follow_up_questions:
                 raise Exception("No follow-up questions found")
             
+            # Debug logging
+            logger.info(f"Updating answer for session {session_id}. Current follow_up_questions: {[{'question': q.get('question', '')[:50], 'answer': q.get('answer', '')[:50], 'clarification_count': q.get('clarification_count', 0)} for q in follow_up_questions]}")
+            
             # Find the first unanswered question
             for question in follow_up_questions:
                 if not question.get("answer"):
                     question["answer"] = answer
+                    logger.info(f"Updated question '{question.get('question', '')[:50]}...' with answer '{answer[:50]}...'")
                     break
             else:
                 # If no unanswered question found, add answer to the last question
                 if follow_up_questions:
                     follow_up_questions[-1]["answer"] = answer
+                    logger.info(f"Updated last question '{follow_up_questions[-1].get('question', '')[:50]}...' with answer '{answer[:50]}...'")
+            
+            # Debug logging after update
+            logger.info(f"After update for session {session_id}. Updated follow_up_questions: {[{'question': q.get('question', '')[:50], 'answer': q.get('answer', '')[:50], 'clarification_count': q.get('clarification_count', 0)} for q in follow_up_questions]}")
         
         # Update the document
         await db.user_ai_interactions.update_one(

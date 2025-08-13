@@ -59,16 +59,26 @@ async def get_next_question(
                 content=f"Reference Context for this topic/question:\n{rag_context}"
             ))
         
-        # Add conversation history
+        # Add conversation history - properly format the messages
         for q in questions:
-            messages.append(q)  #type: ignore
+            if isinstance(q, dict) and "role" in q and "content" in q:
+                # Already properly formatted
+                messages.append(q)
+                logger.info(f"Added message to conversation: role={q['role']}, content={q['content'][:100]}...")
+            else:
+                # Handle legacy format or malformed messages
+                logger.warning(f"Skipping malformed message: {q}")
+                continue
+
+        logger.info(f"Total messages in conversation: {len(messages)}")
+        logger.info(f"Messages: {[{'role': m.get('role'), 'content': m.get('content', '')[:50]} for m in messages]}")
 
         # Add instruction for follow-up question generation with interview type context
         if interview_type in ["multi-line", "case-study"]:
             instruction = """This is a NON-CODING interview (multi-line / case-study / verbal reasoning phase).
 
                             Ask a follow-up question that:
-                            1. Probes deeper into the candidate’s reasoning, explanation, or application
+                            1. Probes deeper into the candidate's reasoning, explanation, or application
                             2. Is open-ended, analytical, or scenario-driven
                             3. Focuses on high-level thinking, structured problem-solving, and communication
                             4. Builds naturally on their previous response
@@ -89,7 +99,7 @@ async def get_next_question(
             instruction = """This is the VERBAL PHASE of a CODING interview.
 
                             Ask a follow-up question that:
-                            1. Digs deeper into the candidate’s logic, algorithmic thinking, or approach
+                            1. Digs deeper into the candidate's logic, algorithmic thinking, or approach
                             2. Focuses on time-space complexity, edge cases, or trade-offs
                             3. Follows naturally from their previous answer
 
@@ -107,10 +117,11 @@ async def get_next_question(
                             The question should assess problem-solving depth—not programming fluency.
                             """
 
-
         messages.append(ChatCompletionUserMessageParam(role="user", content=instruction))
+        logger.info(f"Added instruction for {interview_type} interview type")
 
         # Generate next question using AI
+        logger.info(f"Calling OpenAI API with {len(messages)} messages")
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
@@ -119,12 +130,16 @@ async def get_next_question(
         )
 
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
+        logger.info(f"OpenAI API response: {content[:200] if content else 'None'}...")
         
         # Post-process to ensure no code-related questions
         if content:
             content = _ensure_no_code_questions(content)
+            logger.info(f"Post-processed content: {content[:200]}...")
         
-        return content or get_fallback_interview_question()
+        final_content = content or get_fallback_interview_question()
+        logger.info(f"Final question: {final_content[:200]}...")
+        return final_content
 
     except Exception as e:
         logger.error(f"Error generating next question: {str(e)}", exc_info=True)
