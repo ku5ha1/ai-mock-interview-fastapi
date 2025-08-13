@@ -95,6 +95,22 @@ async def check_single_answer_quality(question: str, answer: str, topic: str, ra
         if len(answer_text) > 200:
             return "good"
         
+        # Check for gibberish patterns (before AI assessment)
+        if len(answer_text) < 10:
+            # Very short answers are likely gibberish unless they contain meaningful content
+            # Check if it's just random characters without meaningful patterns
+            meaningful_short_words = ["ok", "yes", "no", "okay", "sure", "fine", "maybe", "idk", "idc"]
+            if not any(word in answer_text for word in meaningful_short_words):
+                # Check for random character patterns
+                if len(answer_text) < 5:  # Very short answers are suspicious
+                    # Check if it's just random letters (no vowels, no meaningful patterns)
+                    vowels = "aeiou"
+                    if not any(vowel in answer_text for vowel in vowels):
+                        return "bad"
+                    # Check if it's just repeated patterns
+                    if len(set(answer_text)) < len(answer_text) * 0.6:  # Too many repeated characters
+                        return "bad"
+        
         # For algorithmic questions, be very lenient
         algorithmic_keywords = [
             "algorithm", "function", "loop", "iterate", "check", "count", "find",

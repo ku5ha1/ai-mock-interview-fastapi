@@ -79,6 +79,11 @@ class InterviewInitializer:
         """Create the interview session in the database."""
         try:
             user_name = await get_user_name_from_id(self.user_id)
+            
+            # Debug logging for interview type
+            logger.info(f"Creating session with interview_type: {base_question_data.get('interview_type')}")
+            logger.info(f"Base question data keys: {list(base_question_data.keys())}")
+            
             await create_interview_session(
                 user_id=self.user_id,
                 session_id=session_id,
@@ -95,6 +100,10 @@ class InterviewInitializer:
     
     def _build_response(self, session_id: str, base_question_data: Dict[str, Any], first_follow_up: str) -> Dict[str, Any]:
         """Build the response object for the initialized interview."""
+        # Debug logging for interview type
+        logger.info(f"Building response with interview_type: {base_question_data.get('interview_type')}")
+        logger.info(f"Base question data keys: {list(base_question_data.keys())}")
+        
         response = {
             "session_id": session_id,
             "base_question": base_question_data["question"],
@@ -123,4 +132,5 @@ class InterviewInitializer:
                 "sample_output": base_question_data.get("expectedOutput", "")
             })
         
+        logger.info(f"Final response interview_type: {response['interview_type']}")
         return response

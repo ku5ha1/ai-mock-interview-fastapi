@@ -151,7 +151,13 @@ async def fetch_question_by_module(module_code: str, attempted_questions=None):
                 {
                     "$match": {
                         "module_code": module_code,
-                        "question_type": "coding",
+                        "$or": [
+                            {"question_type": "coding"},
+                            {"question_type": "SQL"},
+                            {"question_type": "sql"},
+                            {"programming_language": {"$exists": True, "$ne": ""}},
+                            {"base_code": {"$exists": True, "$ne": ""}}
+                        ],
                         "isAvailableForMockInterview": True,
                         "isDeleted": False,
                         "_id": {"$nin": [ObjectId(qid) for qid in attempted_questions if ObjectId.is_valid(qid)]}
@@ -188,12 +194,19 @@ async def fetch_question_by_module(module_code: str, attempted_questions=None):
         logger.info(f"isAvailableForMockInterview: {question_doc.get('isAvailableForMockInterview', False)}")
         
         # Verify we got the correct question type
-        if question_type == "coding" and actual_question_type != "coding":
+        coding_question_types = ["coding", "SQL", "sql"]
+        if question_type == "coding" and actual_question_type not in coding_question_types:
             logger.error(f"TYPE MISMATCH: Expected coding question but got {actual_question_type}")
             # Try to find a coding question manually
             coding_question = await db.mainquestionbanks.find_one({
                 "module_code": module_code,
-                "question_type": "coding",
+                "$or": [
+                    {"question_type": "coding"},
+                    {"question_type": "SQL"},
+                    {"question_type": "sql"},
+                    {"programming_language": {"$exists": True, "$ne": ""}},
+                    {"base_code": {"$exists": True, "$ne": ""}}
+                ],
                 "isAvailableForMockInterview": True,
                 "isDeleted": False
             })
@@ -230,6 +243,7 @@ async def fetch_question_by_module(module_code: str, attempted_questions=None):
             })
         
         logger.info(f"Final interview_type: {formatted_question['interview_type']}")
+        logger.info(f"Formatted question keys: {list(formatted_question.keys())}")
         return formatted_question
 
     except Exception as e:
@@ -251,6 +265,9 @@ async def get_available_modules():
                 "$match": {
                     "$or": [
                         {"isAvailableForMockInterview": True},  # Coding questions
+                        {"question_type": {"$in": ["coding", "SQL", "sql"]}},  # Explicit coding types
+                        {"programming_language": {"$exists": True, "$ne": ""}},  # Has programming language
+                        {"base_code": {"$exists": True, "$ne": ""}},  # Has base code
                         {"question_type": "approach"}           # Approach questions
                     ],
                     "isDeleted": False

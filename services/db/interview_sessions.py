@@ -56,6 +56,11 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
         # Get interview type from question data
         interview_type = base_question_data.get("interview_type", "approach")
         
+        # Debug logging
+        logger.info(f"Creating interview session with interview_type: {interview_type}")
+        logger.info(f"Base question data keys: {list(base_question_data.keys())}")
+        logger.info(f"Base question data interview_type: {base_question_data.get('interview_type')}")
+        
         # Create base ai_response structure
         ai_response = {
             "session_id": session_id,
