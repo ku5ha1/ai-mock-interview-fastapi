@@ -74,8 +74,8 @@ async def get_next_question(
         logger.info(f"Messages: {[{'role': m.get('role'), 'content': m.get('content', '')[:50]} for m in messages]}")
 
         # Add instruction for follow-up question generation with interview type context
-        if interview_type in ["multi-line", "case-study"]:
-            instruction = """This is a NON-CODING interview (multi-line / case-study / verbal reasoning phase).
+        if interview_type in ["multi-line", "case-study", "approach"]:
+            instruction = """This is a NON-CODING interview (multi-line / case-study / approach / verbal reasoning phase).
 
                             Ask a follow-up question that:
                             1. Probes deeper into the candidate's reasoning, explanation, or application
@@ -86,12 +86,15 @@ async def get_next_question(
                             IMPORTANT:
                             - Do NOT ask for code, syntax, or implementation details
                             - Do NOT ask the candidate to solve or write anything
+                            - Do NOT ask about algorithmic strategies or technical approaches
 
                             Instead, focus on:
                             - Conceptual reasoning and justification
                             - Real-world implications or trade-offs
                             - Structured thinking and analytical breakdowns
                             - Thought processes, frameworks, and lessons learned
+                            - Business logic and problem understanding
+                            - Scenario analysis and case study exploration
 
                             Your follow-up should test understanding and clarity, not implementation skill.
                             """
@@ -99,22 +102,23 @@ async def get_next_question(
             instruction = """This is the VERBAL PHASE of a CODING interview.
 
                             Ask a follow-up question that:
-                            1. Digs deeper into the candidate's logic, algorithmic thinking, or approach
-                            2. Focuses on time-space complexity, edge cases, or trade-offs
+                            1. Digs deeper into the candidate's understanding of the problem requirements
+                            2. Focuses on business logic, edge cases, and problem scope
                             3. Follows naturally from their previous answer
 
                             IMPORTANT:
                             - Do NOT ask for code, syntax, or implementation specifics
                             - Do NOT prompt the candidate to write or describe exact code
+                            - Do NOT ask about algorithmic strategies or technical approaches
 
                             Instead, ask about:
-                            - High-level algorithmic strategy
-                            - Time and space efficiency
-                            - Data structure choices and rationale
-                            - Handling of edge cases or input variation
-                            - Underlying assumptions and optimization strategies
+                            - Problem understanding and requirements clarification
+                            - Business logic and edge case considerations
+                            - Input/output expectations and constraints
+                            - Real-world scenarios and variations
+                            - Problem scope and boundary conditions
 
-                            The question should assess problem-solving depth—not programming fluency.
+                            The question should assess problem understanding and business logic—not technical implementation or programming skills.
                             """
 
         messages.append(ChatCompletionUserMessageParam(role="user", content=instruction))
@@ -149,7 +153,7 @@ async def get_next_question(
 def _ensure_no_code_questions(question: str) -> str:
     """
     Post-process question to ensure it doesn't ask for code.
-    Replaces code-related questions with appropriate conceptual questions.
+    Replaces code-related questions with appropriate business-focused questions.
     """
     question_lower = question.lower()
     
@@ -165,19 +169,19 @@ def _ensure_no_code_questions(question: str) -> str:
     for keyword in code_keywords:
         if keyword in question_lower:
             logger.warning(f"Detected code-related question, replacing: {question}")
-            # Replace with appropriate conceptual question
+            # Replace with appropriate business-focused question
             if "time complexity" in question_lower or "complexity" in question_lower:
-                replacement = "What's the time and space complexity of your approach?"
+                replacement = "What factors would affect the performance of this solution in real-world scenarios?"
             elif "edge case" in question_lower or "edge" in question_lower:
-                replacement = "What edge cases should we consider with this approach?"
+                replacement = "What edge cases or unusual scenarios should we consider for this problem?"
             elif "optimize" in question_lower or "optimization" in question_lower:
-                replacement = "How would you optimize this solution?"
+                replacement = "What aspects of this solution could be improved for better user experience?"
             elif "data structure" in question_lower:
-                replacement = "What data structures would you use and why?"
+                replacement = "What types of data would this solution need to handle?"
             elif "trade-off" in question_lower or "tradeoff" in question_lower:
-                replacement = "What are the trade-offs of your approach?"
+                replacement = "What are the trade-offs between different approaches to this problem?"
             else:
-                replacement = "Can you explain your approach in more detail?"
+                replacement = "Can you explain your understanding of the problem requirements in more detail?"
             
             logger.info(f"Replaced with: {replacement}")
             return replacement

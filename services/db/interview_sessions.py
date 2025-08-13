@@ -112,7 +112,7 @@ async def create_interview_session(user_id: str, session_id: str, topic: str, us
                             "answer": "",
                             "timestamp": datetime.utcnow(),
                             "question_type": "follow_up",
-                            "clarification_count": 0  # Initialize clarification counter for first question
+                            **({"clarification_count": 0} if interview_type == "coding" else {})  # Only for coding interviews
                         }
                     ],
                     "clarifications": [],
@@ -228,13 +228,14 @@ async def add_follow_up_question(session_id: str, question: str, question_id: st
         
         # Update the session data
         session_data = session["meta"]["session_data"]
+        interview_type = session_data.get("interview_type", "approach")
         
         new_question = {
             "question": question,
             "answer": "",
             "timestamp": datetime.utcnow(),
             "question_type": "follow_up",
-            "clarification_count": 0  # Initialize clarification counter
+            **({"clarification_count": 0} if interview_type == "coding" else {})  # Only for coding interviews
         }
         
         session_data["follow_up_questions"].append(new_question)

@@ -57,25 +57,68 @@ async def check_single_answer_quality(question: str, answer: str, topic: str, ra
     Only marks 'bad' if answer is empty, irrelevant, or completely nonsensical.
     """
     try:
+        # Pre-filter obviously good answers to avoid unnecessary AI calls
+        answer_text = answer.strip().lower()
+        
+        # If answer is too short, check if it's meaningful
+        if len(answer_text) < 15:
+            # Check if it's a meaningful short answer
+            meaningful_short_answers = [
+                "use a hash table", "binary search", "dynamic programming", 
+                "two pointers", "sliding window", "dfs", "bfs", "recursion",
+                "sort first", "use a stack", "use a queue", "greedy approach"
+            ]
+            if any(phrase in answer_text for phrase in meaningful_short_answers):
+                return "good"
+        
+        # Check for common good answer patterns
+        good_patterns = [
+            "create a function", "iterate through", "check if", "maintain a counter",
+            "convert to", "handle case", "return the", "for each", "while loop",
+            "if statement", "else", "algorithm", "approach", "strategy", "method",
+            "step by step", "first", "then", "finally", "initialize", "declare"
+        ]
+        
+        if any(pattern in answer_text for pattern in good_patterns):
+            return "good"
+        
+        # Check for obviously bad answers
+        bad_patterns = [
+            "i don't know", "idk", "no idea", "not sure", "random", "gibberish",
+            "asdf", "qwerty", "test", "hello world", "lorem ipsum"
+        ]
+        
+        if any(pattern in answer_text for pattern in bad_patterns):
+            return "bad"
+        
+        # If answer is very long (>200 words), it's likely good
+        if len(answer_text) > 200:
+            return "good"
+        
+        # For algorithmic questions, be very lenient
+        algorithmic_keywords = [
+            "algorithm", "function", "loop", "iterate", "check", "count", "find",
+            "solve", "approach", "method", "strategy", "step", "process"
+        ]
+        
+        if any(keyword in answer_text for keyword in algorithmic_keywords):
+            return "good"
+        
+        # If we reach here, use AI for final assessment with a more lenient prompt
         prompt = f"""
-You are an interviewer evaluating a candidate's answer.  
+You are an interviewer evaluating a candidate's answer to a technical question.
 Your output must be exactly one word: either "good" or "bad" (lowercase, no extra text).
 
-Strict evaluation rules:
-1. First, check if the answer is meaningfully related to the given question.  
-   - If it is unrelated, random, nonsensical, or gibberish → mark as "bad".
-2. If related, check if the answer shows at least minimal understanding or effort.  
-   - For algorithmic/problem-solving questions, even a basic or partial approach counts as "good".
-3. Be lenient about completeness and correctness — only reject if:
-   - Answer is empty or under 10 words without value.
-   - Answer is "I don't know" or equivalent, without any attempt.
-   - Answer is completely off-topic or meaningless.
+Evaluation guidelines - be GENEROUS and lenient:
+- Mark as "good" if the answer shows ANY understanding or effort
+- For algorithmic questions, even basic approaches are "good"
+- For problem-solving, any logical thinking is "good"
+- Only mark as "bad" if completely nonsensical, off-topic, or empty
 
-Focus on relevance first — unrelated answers are always "bad".
-
-Question: {question}  
+Question: {question}
 Answer: {answer}
-"""
+
+Quality:"""
 
         # Add RAG context if available for better evaluation
         if rag_context:
@@ -91,7 +134,7 @@ Answer: {answer}
         )
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
         
-        # More lenient parsing - default to 'good' unless explicitly marked 'bad'
+        # Very lenient parsing - default to 'good' unless explicitly marked 'bad'
         if content and "bad" in content.lower():
             return "bad"
         else:

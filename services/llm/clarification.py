@@ -16,18 +16,36 @@ logger = logging.getLogger(__name__)
 async def get_clarification(main_question: str, clarification_request: str) -> str:
     """
     Generate clarification response for coding interview questions.
-    Provides helpful guidance without revealing the solution.
+    Provides helpful guidance on business requirements without revealing technical solutions.
+    Focuses ONLY on clarifying problem understanding, NOT on implementation details.
     """
     try:
         # Build messages for clarification generation
         messages = [
             ChatCompletionSystemMessageParam(
                 role="system",
-                content="You are a senior technical interviewer providing clarification. Maintain a professional, conversational tone. Provide clear, focused guidance that helps the candidate understand the problem better without giving away the solution. Be encouraging but maintain the interview atmosphere."
+                content="You are a senior technical interviewer providing clarification. Your role is to clarify business requirements and problem understanding ONLY. Do NOT provide any technical implementation details, code guidance, or algorithmic suggestions. Focus on helping the candidate understand what the problem is asking for, not how to solve it. Maintain a professional, conversational tone and be encouraging but maintain the interview atmosphere. Keep your responses natural and conversational, like a real interviewer would speak. Avoid formal business language or structured formatting."
             ),
             ChatCompletionUserMessageParam(
                 role="user",
-                content=f"Main question: {main_question}\nClarification request: {clarification_request}"
+                content=f"""Main question: {main_question}
+Clarification request: {clarification_request}
+
+Provide clarification that focuses ONLY on:
+1. Business requirements clarification
+2. Problem scope and boundaries
+3. Input/output expectations
+4. Edge case considerations (business logic only)
+
+Do NOT provide:
+- Code examples or implementation details
+- Algorithmic approaches or strategies
+- Technical solutions or optimizations
+- Step-by-step implementation guidance
+
+Focus on helping the candidate understand WHAT the problem requires, not HOW to solve it.
+
+Keep your response conversational and natural, like a real interviewer would speak."""
             )
         ]
 
