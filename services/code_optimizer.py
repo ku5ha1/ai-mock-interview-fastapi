@@ -85,7 +85,7 @@ async def generate_optimized_code(
     model: str = MODEL_NAME
 ) -> dict:
     """
-    Generate optimized version of user's code (Python/SQL).
+    Generate optimized version of user's code (Python/MySQL).
     Always returns JSON with only 'optimized_code'.
     """
     try:
@@ -121,7 +121,7 @@ Expected Output: {sample_output}
 1. Keep the exact same function signature and logic
 2. Optimize only for performance, readability, or best practices
 3. Ensure the complete code is returned (no truncation)
-4. Maintain proper Python/SQL syntax and formatting
+4. Maintain proper Python/MySQL syntax and formatting
 5. If no meaningful optimization is possible, return the original code
 6. REMOVE test cases and sample usage code
 7. KEEP output statements that show final computation results
