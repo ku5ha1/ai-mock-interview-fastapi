@@ -13,6 +13,8 @@ from models.schemas import CodeOptimizationRequest
 from services.rag.retriever_factory import get_rag_retriever
 from services.db import validate_user_id, save_user_ai_interaction
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["Code Optimization"])
 
 # Improved comment stripping that preserves actual code
@@ -95,7 +97,7 @@ async def optimize_code(request: CodeOptimizationRequest):
     Returns only the optimized code in the response, with all comments removed.
     Uses the 'gpt-4o-mini-2024-07-18' model for code optimization.
     """
-    logger = logging.getLogger(__name__)
+    
     
     # Validate user exists
     if not await validate_user_id(request.user_id):
