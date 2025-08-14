@@ -1,7 +1,6 @@
 # Core FastAPI and web framework dependencies
 fastapi==0.115.13
 uvicorn[standard]==0.27.1
-uvloop==0.21.0
 starlette==0.46.2
 pydantic==2.11.7
 pydantic-core==2.33.2
@@ -12,81 +11,56 @@ python-dotenv==1.0.0
 # HTTP and networking
 httpx==0.24.1
 httpcore==0.17.3
-httptools==0.6.4
-websockets==15.0.1
-websocket-client==1.8.0
 requests==2.32.4
 urllib3==2.5.0
 certifi==2025.8.3
 charset-normalizer==3.4.3
 idna==3.10
-PySocks==1.7.1
 
 # Database and data processing
 motor==3.3.2
 pymongo==4.6.1
-pandas==2.3.1
-numpy==1.26.4
+pandas>=2.3.0
+numpy>=1.26.0
 python-dateutil==2.9.0.post0
 pytz==2025.2
 
-# Machine Learning and Data Science
-scikit-learn==1.7.1
-scipy==1.16.1
-matplotlib==3.10.5
-seaborn==0.13.2
-plotly==6.3.0
-tensorflow==2.20.0
-keras==3.11.2
-torch==2.8.0
-torchvision==0.23.0
-opencv-python==4.12.0.88
-pillow==11.3.0
+# NLP and text processing (core)
+spacy>=3.7.0
+spacy-legacy>=3.0.12
+spacy-loggers>=1.0.5
+qdrant-client>=1.14.0
+regex>=2025.7.0
+tiktoken>=0.9.0
 
-# NLP and text processing
-spacy==3.7.2
-spacy-legacy==3.0.12
-spacy-loggers==1.0.5
-en-core-web-sm==3.7.1
-qdrant-client==1.14.3
-regex==2025.7.34
-tiktoken==0.9.0
+# Note: After installing spacy, run: python -m spacy download en_core_web_sm
 
-# Web scraping and automation
-beautifulsoup4==4.13.4
-selenium==4.35.0
-lxml==6.0.0
-soupsieve==2.7
+# Web scraping and automation (core)
+beautifulsoup4>=4.13.0
+lxml>=6.0.0
+soupsieve>=2.7.0
 
 # AWS Lambda and deployment
-mangum==0.17.0
-boto3==1.34.0
-botocore==1.34.0
+mangum>=0.17.0
+boto3>=1.34.0
+botocore>=1.34.0
 
-# Utilities and helpers
-python-docx==1.1.2
-PyYAML==6.0.2
-rich==14.1.0
-tqdm==4.67.1
-watchfiles==1.1.0
-smart-open==6.4.0
-
-# Development and testing
-pytest==7.4.0
-pytest-asyncio==0.21.1
-black==23.0.0
-flake8==6.0.0
+# Utilities and helpers (core)
+python-docx>=1.1.0
+PyYAML>=6.0.0
+rich>=14.1.0
+tqdm>=4.67.0
+watchfiles>=1.1.0
 
 # Additional dependencies
-anyio==4.10.0
-sniffio==1.3.1
-trio==0.30.0
-trio-websocket==0.12.2
-h11==0.14.0
-h2==4.2.0
-hyperframe==6.1.0
-wsproto==1.2.0
-click==8.2.1
-typer==0.9.4
-jinja2==3.1.6
-markupsafe==3.0.2
+anyio>=4.10.0
+sniffio>=1.3.0
+click>=8.2.0
+jinja2>=3.1.0
+markupsafe>=3.0.0
+
+# Development and testing (optional - comment out for production)
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# black>=24.10.0
+# flake8>=6.0.0
