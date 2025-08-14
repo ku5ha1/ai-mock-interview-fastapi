@@ -60,18 +60,25 @@ async def execute_python_code(code: str, question_id: str) -> CodeExecutionRespo
     try:
         # Get question data from MongoDB
         question_data = await get_question_data(question_id)
-        if not question_data:
-            raise Exception("Question not found")
+        
+        # Log for debugging
+        logging.info(f"Question data retrieved: {question_data is not None}")
+        if question_data:
+            logging.info(f"Question has input: {bool(question_data.get('input'))}")
+            logging.info(f"Question has output: {bool(question_data.get('output'))}")
         
         # Generate test execution code
         test_execution = generate_python_test_execution(
             code, 
-            question_data.get("input", ""),
-            question_data.get("output", "")
+            question_data.get("input", "") if question_data else "",
+            question_data.get("output", "") if question_data else ""
         )
         
         # Combine user code + test execution
         full_code = f"{code}\n\n{test_execution}"
+        
+        # Log the full code for debugging
+        logging.info(f"Executing Python code with length: {len(full_code)}")
         
         # Execute code
         result = await run_python_code(full_code)
@@ -125,6 +132,8 @@ async def execute_sql_code(code: str, question_id: str) -> CodeExecutionResponse
 async def get_question_data(question_id: str) -> dict:
     """Get question data from MongoDB."""
     try:
+        logging.info(f"Attempting to retrieve question data for ID: {question_id}")
+        
         db = await get_db()
         collection = db.mainquestionbanks
         
@@ -132,9 +141,17 @@ async def get_question_data(question_id: str) -> dict:
         try:
             object_id = ObjectId(question_id)
             question = await collection.find_one({"_id": object_id})
-        except:
+            logging.info(f"Question found with ObjectId: {question is not None}")
+        except Exception as e:
+            logging.warning(f"ObjectId conversion failed: {str(e)}, trying string ID")
             # If conversion fails, try with string ID
             question = await collection.find_one({"_id": question_id})
+            logging.info(f"Question found with string ID: {question is not None}")
+            
+        if question:
+            logging.info(f"Question retrieved successfully. Has input: {bool(question.get('input'))}, Has output: {bool(question.get('output'))}")
+        else:
+            logging.warning(f"No question found for ID: {question_id}")
             
         return question
     except Exception as e:
@@ -173,16 +190,30 @@ if __name__ == "__main__":
         print(f"Error: {{e}}")
 """
             return test_code
+        elif function_name:
+            # Function exists but no input data - just call the function
+            test_code = f"""
+# Test execution
+if __name__ == "__main__":
+    try:
+        # Function defined but no test input provided
+        print("Function defined successfully. No test input provided.")
+        print("Function signature:", "{function_name}")
+        
+    except Exception as e:
+        print(f"Error: {{e}}")
+"""
+            return test_code
     
     # Fallback: execute the code directly
-    return """
+    return f"""
 # Test execution
 if __name__ == "__main__":
     try:
         # Execute the code directly
-        exec(code)
+        {code}
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error: {{e}}")
 """
 
 async def run_python_code(code: str) -> dict:
@@ -198,6 +229,9 @@ async def run_python_code(code: str) -> dict:
             f.write(code)
             temp_file = f.name
         
+        logging.info(f"Created temporary file: {temp_file}")
+        logging.info(f"Code content preview: {code[:200]}...")
+        
         try:
             # Execute with timeout
             process = await asyncio.wait_for(
@@ -211,6 +245,10 @@ async def run_python_code(code: str) -> dict:
             
             stdout, stderr = await process.communicate()
             
+            logging.info(f"Process completed with return code: {process.returncode}")
+            logging.info(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
+            logging.info(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
+            
             return {
                 "stdout": stdout.decode('utf-8', errors='ignore'),
                 "stderr": stderr.decode('utf-8', errors='ignore'),
@@ -221,14 +259,17 @@ async def run_python_code(code: str) -> dict:
             # Clean up temporary file
             if os.path.exists(temp_file):
                 os.unlink(temp_file)
+                logging.info(f"Cleaned up temporary file: {temp_file}")
                 
     except asyncio.TimeoutError:
+        logging.error("Python execution timed out")
         return {
             "stdout": "",
             "stderr": "Execution timed out after 15 seconds",
             "exception": "TimeoutError"
         }
     except Exception as e:
+        logging.error(f"Python execution error: {str(e)}")
         return {
             "stdout": "",
             "stderr": str(e),
