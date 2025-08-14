@@ -73,7 +73,65 @@ def validate_code_syntax(code: str, language: str = "python") -> bool:
         # For unknown languages, assume valid
         return True
 
-@retry_with_backoff
+def analyze_code_quality(original_code: str, optimized_code: str) -> dict:
+    """
+    Analyze the quality of optimization to ensure it's actually improving the code.
+    Returns a dict with quality metrics and recommendations.
+    """
+    try:
+        # Basic metrics
+        original_lines = len(original_code.splitlines())
+        optimized_lines = len(optimized_code.splitlines())
+        
+        # Check if we're just removing lines without optimization
+        line_reduction = original_lines - optimized_lines
+        line_reduction_ratio = line_reduction / original_lines if original_lines > 0 else 0
+        
+        # Check for important elements that should be preserved
+        has_original_prints = 'print(' in original_code
+        has_optimized_prints = 'print(' in optimized_code
+        prints_preserved = has_original_prints == has_optimized_prints
+        
+        # Check for function/class definitions
+        has_original_defs = 'def ' in original_code or 'class ' in original_code
+        has_optimized_defs = 'def ' in optimized_code or 'class ' in optimized_code
+        structure_preserved = has_original_defs == has_optimized_defs
+        
+        # Check if code is actually executable (has basic structure)
+        is_executable = (
+            optimized_code.strip() and 
+            not optimized_code.startswith('#') and
+            not optimized_code.startswith('"""') and
+            not optimized_code.startswith("'''")
+        )
+        
+        # Quality score (0-100)
+        quality_score = 0
+        if structure_preserved:
+            quality_score += 30
+        if prints_preserved:
+            quality_score += 20
+        if is_executable:
+            quality_score += 30
+        if line_reduction_ratio > 0.1:  # At least 10% reduction
+            quality_score += 20
+        
+        return {
+            "quality_score": quality_score,
+            "line_reduction": line_reduction,
+            "line_reduction_ratio": line_reduction_ratio,
+            "prints_preserved": prints_preserved,
+            "structure_preserved": structure_preserved,
+            "is_executable": is_executable,
+            "recommendation": "good" if quality_score >= 70 else "needs_improvement"
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing code quality: {str(e)}")
+        return {
+            "quality_score": 0,
+            "recommendation": "error"
+        }
+
 @retry_with_backoff
 async def generate_optimized_code(
     question: str,
@@ -89,22 +147,37 @@ async def generate_optimized_code(
     Always returns JSON with only 'optimized_code'.
     """
     try:
-        prompt = f"""
-You are a code optimizer. Your task is to optimize the given code while preserving its EXACT functionality and structure.
+        prompt = f"""You are an expert code optimizer. Your task is to OPTIMIZE the given code while preserving its EXACT functionality and ensuring it's production-ready.
 
-### CRITICAL RULES
+### CRITICAL REQUIREMENTS
 - RETURN ONLY JSON FORMAT: {{"optimized_code": "complete optimized code"}}
 - PRESERVE EXACT BEHAVIOR - same inputs must produce same outputs
-- MAINTAIN CODE STRUCTURE - keep functions, classes, logic flow intact
-- PRESERVE READABILITY - keep proper indentation and formatting
-- REMOVE test cases, sample usage code, and debug prints
-- KEEP output statements that show final results (e.g., print statements showing learned parameters)
-- REMOVE unnecessary comments, docstrings, debug prints, and trailing whitespace
-- DO NOT TRUNCATE CODE - return the complete optimized function/class
-- DO NOT CHANGE variable names, function names, or logic flow unless it improves performance
-- IF code is already optimal, return the ORIGINAL code unchanged
-- ENSURE CODE IS EXECUTABLE and complete
-- RETURN THE CORE FUNCTION/CLASS WITH FINAL OUTPUT - keep result display statements
+- MAINTAIN ALL IMPORTANT OUTPUT STATEMENTS - keep print statements, return values, etc.
+- OPTIMIZE FOR PERFORMANCE, READABILITY, AND BEST PRACTICES
+- REMOVE ONLY unnecessary code, comments, and debug statements
+- KEEP the core logic, functions, classes, and output statements
+- ENSURE CODE IS COMPLETE AND EXECUTABLE
+- DO NOT truncate or remove essential functionality
+
+### OPTIMIZATION FOCUS AREAS
+1. **Performance**: Use more efficient algorithms, reduce unnecessary operations
+2. **Readability**: Improve variable names, structure, and formatting
+3. **Best Practices**: Follow language conventions, remove redundant code
+4. **Maintainability**: Simplify complex logic, improve error handling
+
+### WHAT TO PRESERVE
+- All function/class definitions
+- All print statements that show results
+- All return statements and output logic
+- Core algorithm and business logic
+- Error handling and edge case logic
+
+### WHAT TO REMOVE/IMPROVE
+- Unnecessary comments and docstrings
+- Debug print statements (but keep result prints)
+- Redundant variable assignments
+- Inefficient loops or operations
+- Unused imports or variables
 
 ### PROBLEM CONTEXT
 Question: {question}
@@ -118,16 +191,15 @@ Sample Input: {sample_input}
 Expected Output: {sample_output}
 
 ### OPTIMIZATION INSTRUCTIONS
-1. Keep the exact same function signature and logic
-2. Optimize only for performance, readability, or best practices
-3. Ensure the complete code is returned (no truncation)
-4. Maintain proper Python/MySQL syntax and formatting
+1. Analyze the code for actual optimization opportunities
+2. Focus on performance improvements, not just line reduction
+3. Ensure the complete, executable code is returned
+4. Maintain proper syntax and formatting
 5. If no meaningful optimization is possible, return the original code
-6. REMOVE test cases and sample usage code
-7. KEEP output statements that show final computation results
-8. Return the core function/class with result display
+6. Preserve all output statements that show final results
+7. Return the core function/class with complete functionality
 
-Return the complete optimized code in JSON format.
+Return the complete optimized code in JSON format. The code must be executable and produce the same results as the original.
 """
 
         if rag_context:
@@ -136,13 +208,15 @@ Return the complete optimized code in JSON format.
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=2000,  # Increased token limit
+            max_completion_tokens=3000,  # Increased token limit for better optimization
+            temperature=0.1,  # Lower temperature for more consistent optimization
             response_format={"type": "json_object"}
         )
 
         content = safe_strip(getattr(response.choices[0].message, 'content', None))
 
         if not content:
+            logger.warning("Empty response from LLM, returning original code")
             return {"optimized_code": user_code}
 
         try:
@@ -150,6 +224,7 @@ Return the complete optimized code in JSON format.
             optimized_code = parsed.get("optimized_code", "")
             
             if not optimized_code:
+                logger.warning("No optimized_code in LLM response, returning original code")
                 return {"optimized_code": user_code}
             
             # Detect language based on code content
@@ -162,8 +237,23 @@ Return the complete optimized code in JSON format.
                 logger.warning(f"Syntax validation failed for {language} code, returning original code")
                 return {"optimized_code": user_code}
             
+            # Analyze optimization quality
+            quality_analysis = analyze_code_quality(user_code, optimized_code)
+            
+            # If optimization quality is poor, return original code
+            if quality_analysis["quality_score"] < 50:
+                logger.warning(f"Poor optimization quality (score: {quality_analysis['quality_score']}), returning original code")
+                logger.warning(f"Quality analysis: {quality_analysis}")
+                return {"optimized_code": user_code}
+            
+            # Log successful optimization
+            logger.info(f"Code optimization successful. Quality score: {quality_analysis['quality_score']}")
+            logger.info(f"Quality analysis: {quality_analysis}")
+            
             return {"optimized_code": optimized_code}
-        except json.JSONDecodeError:
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
             return {"optimized_code": user_code}
 
     except Exception as e:

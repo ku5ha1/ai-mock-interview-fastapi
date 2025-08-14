@@ -120,11 +120,12 @@ def get_fallback_clarification() -> str:
 def get_fallback_optimized_code() -> str:
     """
     Return fallback code when optimization fails.
-    Returns a valid JSON string instead of a comment.
+    Returns a valid JSON string with error information.
     """
     return json.dumps({
         "optimized_code": "# Error: Could not optimize code. Please try again.",
-        "optimization_summary": "System error occurred during optimization."
+        "optimization_summary": "System error occurred during optimization. The original code has been returned unchanged.",
+        "error_details": "The optimization service encountered an error. This could be due to temporary service issues or invalid input. Please verify your code and try again."
     })
 
 def get_fallback_feedback(user_name: str = "Candidate") -> dict:
