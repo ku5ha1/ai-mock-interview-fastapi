@@ -7,6 +7,8 @@ with explanations and performance enhancements.
 
 import logging
 import re
+import hashlib
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Body
 from services.code_optimizer import generate_optimized_code, generate_optimized_code_with_summary, analyze_code_quality
 from models.schemas import CodeOptimizationRequest
@@ -89,102 +91,108 @@ def strip_comments_from_code(code: str) -> str:
     
     return result
 
+# Add this function after the strip_comments_from_code function
+def quick_validate_optimized_code(original: str, optimized: str) -> tuple[bool, str]:
+    """
+    Fast validation of optimized code without complex checks.
+    Returns (is_valid, note)
+    """
+    if not optimized or not isinstance(optimized, str):
+        return False, "No optimized code generated"
+    
+    if not optimized.strip():
+        return False, "Generated code is empty"
+    
+    if optimized.strip() == original.strip():
+        return True, "Code was already optimal. No changes were made."
+    
+    # Quick structure check
+    has_structure = any([
+        'def ' in optimized,
+        'class ' in optimized,
+        'import ' in optimized,
+        '=' in optimized,
+        'print(' in optimized,
+        'return ' in optimized
+    ])
+    
+    if not has_structure:
+        return False, "Generated code lacks essential structure"
+    
+    return True, "Code validation passed"
+
+optimization_cache = {}
+
+def get_cache_key(user_code: str, question: str) -> str:
+    """Generate cache key for optimization results"""
+    content = f"{user_code}:{question}"
+    return hashlib.md5(content.encode()).hexdigest()
+
 @router.post("/optimize-code")
 async def optimize_code(request: CodeOptimizationRequest):
     """
     Optimize user's code with improvements and explanations.
     Uses RAG context to provide relevant optimization suggestions.
     Returns only the optimized code in the response, with all comments removed.
-    Uses the 'gpt-4o-mini-2024-07-18' model for code optimization.
+    Uses the 'gpt-3.5-turbo' model for faster code optimization.
     """
     
-    
-    # Validate user exists
-    if not await validate_user_id(request.user_id):
-        logger.error(f"User not found: user_id={request.user_id}")
-        raise HTTPException(status_code=404, detail="User not found")
-    
     try:
-        # Generate optimized code using only user input and no external context
-        result = await generate_optimized_code(
+        # Check cache first
+        cache_key = get_cache_key(request.user_code, request.question)
+        if cache_key in optimization_cache:
+            logger.info(f"Returning cached optimization for user_id={request.user_id}")
+            return optimization_cache[cache_key]
+        
+        # Start optimization and user validation in parallel
+        optimization_task = generate_optimized_code(
             question=request.question,
             description=request.description,
             user_code=request.user_code,
             sample_input=request.sample_input,
             sample_output=request.sample_output,
-            model="gpt-4o-mini-2024-07-18"
+            model="gpt-3.5-turbo"  # Faster model
         )
         
-        # Save interaction for analytics (non-blocking)
-        try:
-            await save_user_ai_interaction(
+        validation_task = validate_user_id(request.user_id)
+        
+        # Wait for both to complete (parallel execution)
+        result, is_valid_user = await asyncio.gather(optimization_task, validation_task)
+        
+        # Validate user exists
+        if not is_valid_user:
+            logger.error(f"User not found: user_id={request.user_id}")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Save interaction for analytics (non-blocking - don't wait for it)
+        asyncio.create_task(
+            save_user_ai_interaction(
                 user_id=request.user_id,
                 endpoint="code_optimization",
                 input_data=request.dict(),
                 ai_response=result
             )
-        except Exception as e:
-            logger.error(f"Failed to save user-AI interaction for user_id={request.user_id}: {e}", exc_info=True)
+        )
         
         # Enhanced validation of optimized code
         optimized_code = result.get("optimized_code")
         
-        # Check if optimized_code exists and is valid
-        if not optimized_code:
-            logger.error(f"No optimized_code field in result for user_id={request.user_id}, question={request.question}. Full result: {result}")
-            raise HTTPException(status_code=500, detail="No optimized code generated. Please try again.")
-        
-        if not isinstance(optimized_code, str):
-            logger.error(f"optimized_code is not a string for user_id={request.user_id}. Type: {type(optimized_code)}, Value: {optimized_code}")
-            raise HTTPException(status_code=500, detail="Invalid optimized code format. Please try again.")
-        
-        if not optimized_code.strip():
-            logger.error(f"optimized_code is empty for user_id={request.user_id}, question={request.question}")
-            raise HTTPException(status_code=500, detail="Generated code is empty. Please try again.")
-        
-        # Check if the optimized code is actually different from the original
-        if optimized_code.strip() == request.user_code.strip():
-            logger.info(f"Code optimization returned identical code for user_id={request.user_id}, returning original with note")
+        # Use fast validation instead of complex checks
+        is_valid, note = quick_validate_optimized_code(request.user_code, optimized_code)
+        if not is_valid:
             return {
                 "optimized_code": request.user_code,
-                "optimization_note": "Code was already optimal. No changes were made."
+                "optimization_note": note
             }
         
         # Strip comments from the code
         code_no_comments = strip_comments_from_code(optimized_code)
         
-        # Enhanced validation after comment stripping
+        # Quick validation after comment stripping
         if not code_no_comments.strip():
-            logger.error(f"Code became empty after comment stripping for user_id={request.user_id}. Original: {optimized_code[:200]}...")
-            # Return the original code if stripping removed everything
             return {
                 "optimized_code": request.user_code,
                 "optimization_note": "Error: Comment stripping removed all content. Original code returned."
-            }
-        
-        # Additional validation: ensure the optimized code has the essential structure
-        essential_elements = []
-        if 'def ' in request.user_code or 'class ' in request.user_code:
-            essential_elements.append('function/class definition')
-        if 'print(' in request.user_code:
-            essential_elements.append('print statements')
-        if 'return ' in request.user_code:
-            essential_elements.append('return statements')
-        
-        missing_elements = []
-        for element in essential_elements:
-            if element == 'function/class definition' and ('def ' not in code_no_comments and 'class ' not in code_no_comments):
-                missing_elements.append('function/class definition')
-            elif element == 'print statements' and 'print(' not in code_no_comments:
-                missing_elements.append('print statements')
-            elif element == 'return statements' and 'return ' not in code_no_comments:
-                missing_elements.append('return statements')
-        
-        if missing_elements:
-            logger.warning(f"Essential elements missing from optimized code: {missing_elements}")
-            return {
-                "optimized_code": request.user_code,
-                "optimization_note": f"Warning: Essential elements were removed during optimization: {', '.join(missing_elements)}. Original code returned."
             }
         
         # Log success for debugging
@@ -197,10 +205,14 @@ async def optimize_code(request: CodeOptimizationRequest):
         # Provide informative response about the optimization
         optimization_note = f"Code optimized successfully. Reduced from {original_length} to {optimized_length} characters ({reduction_percentage:.1f}% reduction)."
         
-        return {
+        # Cache the result before returning
+        response = {
             "optimized_code": code_no_comments,
             "optimization_note": optimization_note
         }
+        optimization_cache[cache_key] = response
+        
+        return response
         
     except HTTPException:
         raise
