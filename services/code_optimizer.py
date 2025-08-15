@@ -172,6 +172,13 @@ async def generate_optimized_code(
 - Core algorithm and business logic
 - Error handling and edge case logic
 
+CRITICAL REQUIREMENTS:
+1. Preserve ALL import statements (import pandas as pd, import numpy as np, etc.)
+2. Keep type hints in function signatures (pd.DataFrame, np.array, etc.)
+3. Maintain the exact same function signature
+4. Only optimize the function logic, not the imports or type hints
+
+
 ### WHAT TO REMOVE/IMPROVE
 - Unnecessary comments and docstrings
 - Debug print statements (but keep result prints)
@@ -198,6 +205,9 @@ Expected Output: {sample_output}
 5. If no meaningful optimization is possible, return the original code
 6. Preserve all output statements that show final results
 7. Return the core function/class with complete functionality
+IMPORTANT: Preserve ALL import statements that are used in the function signature, 
+function body, or are essential for the code to run. 
+Do NOT remove imports like pandas, numpy, torch, etc."
 
 Return the complete optimized code in JSON format. The code must be executable and produce the same results as the original.
 """
