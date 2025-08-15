@@ -173,10 +173,16 @@ async def generate_optimized_code(
 - Error handling and edge case logic
 
 CRITICAL REQUIREMENTS:
-1. Preserve ALL import statements (import pandas as pd, import numpy as np, etc.)
-2. Keep type hints in function signatures (pd.DataFrame, np.array, etc.)
-3. Maintain the exact same function signature
-4. Only optimize the function logic, not the imports or type hints
+1. Preserve ALL existing import statements from the original code
+2. If you add new functionality that requires additional imports, ADD those imports
+3. If you add type hints (like List[int], pd.DataFrame), include the necessary imports
+4. Examples of required imports to add:
+   - List, Dict, Tuple → from typing import List, Dict, Tuple
+   - pd.DataFrame → import pandas as pd
+   - np.array → import numpy as np
+   - torch.tensor → import torch
+5. Maintain the exact same function signature unless explicitly improving it
+6. Only optimize the function logic, preserve all structural elements
 
 
 ### WHAT TO REMOVE/IMPROVE
