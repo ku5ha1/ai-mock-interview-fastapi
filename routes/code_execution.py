@@ -76,8 +76,19 @@ async def execute_python_code(code: str, stdin: Optional[str] = None) -> CodeExe
         logging.info(f"Executing Python code with length: {len(code)}")
         logging.info(f"Stdin provided: {repr(stdin) if stdin is not None else 'None'}")
         
-        # Execute code directly (no test execution wrapper needed)
-        result = await run_python_code(code, stdin)
+        # NEW: Check if this is a coding question and add test cases
+        if is_coding_question(code):
+            logging.info("Detected coding question - adding test case execution")
+            question_info = detect_question_type_and_get_test_cases(code)
+            executable_code = create_executable_code(code, question_info)
+            logging.info(f"Created executable code with test cases for function: {question_info.get('function_name')}")
+        else:
+            # Regular code execution (no test cases)
+            executable_code = code
+            logging.info("Regular code execution (no test cases)")
+        
+        # Execute the code (with or without test cases)
+        result = await run_python_code(executable_code, stdin)
         
         return CodeExecutionResponse(
             status="success",
