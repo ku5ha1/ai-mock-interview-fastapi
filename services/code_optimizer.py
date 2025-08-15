@@ -158,6 +158,11 @@ async def generate_optimized_code(
 - KEEP the core logic, functions, classes, and output statements
 - ENSURE CODE IS COMPLETE AND EXECUTABLE
 - DO NOT truncate or remove essential functionality
+- ALWAYS complete all code statements completely
+- NEVER leave incomplete print statements, function calls, or expressions
+- Ensure all parentheses, quotes, and syntax are properly closed
+- Test that the output code is syntactically valid Python
+- Complete any incomplete sentences or expressions
 
 ### OPTIMIZATION FOCUS AREAS
 1. **Performance**: Use more efficient algorithms, reduce unnecessary operations
