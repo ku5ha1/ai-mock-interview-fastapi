@@ -564,15 +564,17 @@ async def run_sql_code(code: str) -> dict:
         logging.info("User SQL query executed successfully")
         
         # Get results
+                # Get results
         try:
             results = cursor.fetchall()
             columns = [description[0] for description in cursor.description] if cursor.description else []
             
-            # Format output
+            # Format output - remove extra text formatting to match One Compiler
             output_lines = []
             if columns:
-                output_lines.append("Columns: " + " | ".join(columns))
-                output_lines.append("-" * (len("Columns: ") + len(" | ".join(columns))))
+                # Just add the column headers without "Columns: " prefix
+                output_lines.append(" | ".join(columns))
+                # Remove the separator line to match One Compiler format
             
             for row in results:
                 output_lines.append(" | ".join(str(cell) for cell in row))
