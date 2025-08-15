@@ -233,7 +233,7 @@ Ensure all code is syntactically valid and can run immediately."
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=3000,  # Increased token limit for better optimization
+            max_completion_tokens=3500,  # Increased token limit for better optimization
             temperature=0.1,  # Lower temperature for more consistent optimization
             response_format={"type": "json_object"}
         )
