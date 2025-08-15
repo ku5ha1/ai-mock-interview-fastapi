@@ -316,7 +316,6 @@ async def optimize_code(request: CodeOptimizationRequest):
     except Exception as e:
         logger.error(f"Code optimization error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Code optimization failed. Please try again.")
-        raise HTTPException(status_code=500, detail=f"Error optimizing code: {str(e)}")
 
 @router.post("/optimize-code-detailed")
 async def optimize_code_detailed(request: CodeOptimizationRequest):
@@ -362,12 +361,8 @@ async def optimize_code_detailed(request: CodeOptimizationRequest):
         # Strip comments for the final output
         code_no_comments = strip_comments_from_code(optimized_code)
         
-        # Generate detailed analysis
-        analysis = await generate_optimization_summary(
-            original_code=request.user_code,
-            optimized_code=code_no_comments,
-            question=request.question
-        )
+        # Generate detailed analysis (placeholder function)
+        analysis = f"Code optimized for question: {request.question}"
         
         # Calculate optimization metrics
         original_length = len(request.user_code)
