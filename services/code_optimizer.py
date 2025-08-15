@@ -221,6 +221,10 @@ function body, or are essential for the code to run.
 Do NOT remove imports like pandas, numpy, torch, etc."
 
 Return the complete optimized code in JSON format. The code must be executable and produce the same results as the original.
+
+"IMPORTANT: Always return COMPLETE, executable code. 
+Never leave incomplete statements, print statements, or expressions.
+Ensure all code is syntactically valid and can run immediately."
 """
 
         if rag_context:
