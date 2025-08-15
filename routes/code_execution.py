@@ -137,14 +137,18 @@ def detect_question_type_and_get_test_cases(code: str) -> dict:
     """Universal function analyzer - detects function signature and generates appropriate test cases."""
     import re
     
-    # Find all function definitions
-    function_pattern = r'def\s+(\w+)\s*\(([^)]*)\)\s*->?\s*([^:]*):'
+    # FIXED: More flexible regex that handles functions with or without return type annotations
+    function_pattern = r'def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*([^:]*))?\s*:'
     matches = re.findall(function_pattern, code)
     
     if not matches:
         return {"test_cases": ["test"], "function_name": "unknown"}
     
     function_name, params, return_type = matches[0]
+    
+    # Handle case where return_type might be empty string
+    if not return_type:
+        return_type = "unknown"
     
     # Parse parameters
     param_list = [p.strip() for p in params.split(',') if p.strip()]
