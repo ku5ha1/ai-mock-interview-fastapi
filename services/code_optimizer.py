@@ -9,69 +9,10 @@ from services.llm.utils import MODEL_NAME, client, retry_with_backoff, safe_stri
 from typing import Union, Optional
 import logging
 import json
-import ast
-import re
 
 logger = logging.getLogger(__name__)
 
-def validate_python_syntax(code: str) -> bool:
-    """
-    Validate Python syntax using ast.parse.
-    Returns True if syntax is valid, False otherwise.
-    """
-    try:
-        ast.parse(code)
-        return True
-    except SyntaxError as e:
-        logger.warning(f"Python syntax error: {str(e)}")
-        return False
-    except Exception as e:
-        logger.warning(f"Python validation error: {str(e)}")
-        return False
 
-def validate_sql_syntax(code: str) -> bool:
-    """
-    Basic SQL syntax validation using regex patterns.
-    Returns True if basic SQL structure is valid, False otherwise.
-    """
-    try:
-        # Remove comments and normalize whitespace
-        code_clean = re.sub(r'--.*$', '', code, flags=re.MULTILINE)  # Remove single-line comments
-        code_clean = re.sub(r'/\*.*?\*/', '', code_clean, flags=re.DOTALL)  # Remove multi-line comments
-        code_clean = re.sub(r'\s+', ' ', code_clean).strip()
-        
-        # Basic SQL validation patterns
-        sql_patterns = [
-            r'\bSELECT\b',  # Must have SELECT
-            r'\bFROM\b',    # Must have FROM
-            r'[;]?\s*$',    # Optional semicolon at end
-        ]
-        
-        for pattern in sql_patterns:
-            if not re.search(pattern, code_clean, re.IGNORECASE):
-                logger.warning(f"SQL validation failed: missing pattern {pattern}")
-                return False
-        
-        return True
-    except Exception as e:
-        logger.warning(f"SQL validation error: {str(e)}")
-        return False
-
-def validate_code_syntax(code: str, language: str = "python") -> bool:
-    """
-    Validate code syntax based on language.
-    Returns True if syntax is valid, False otherwise.
-    """
-    if not code or not isinstance(code, str):
-        return False
-    
-    if language.lower() == "python":
-        return validate_python_syntax(code)
-    elif language.lower() == "sql":
-        return validate_sql_syntax(code)
-    else:
-        # For unknown languages, assume valid
-        return True
 
 def analyze_code_quality(original_code: str, optimized_code: str) -> dict:
     """
@@ -79,6 +20,9 @@ def analyze_code_quality(original_code: str, optimized_code: str) -> dict:
     Returns a dict with quality metrics and recommendations.
     """
     try:
+        # Detect language
+        is_sql = any(keyword in original_code.upper() for keyword in ["SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE"])
+        
         # Basic metrics
         original_lines = len(original_code.splitlines())
         optimized_lines = len(optimized_code.splitlines())
@@ -87,42 +31,74 @@ def analyze_code_quality(original_code: str, optimized_code: str) -> dict:
         line_reduction = original_lines - optimized_lines
         line_reduction_ratio = line_reduction / original_lines if original_lines > 0 else 0
         
-        # Check for important elements that should be preserved
-        has_original_prints = 'print(' in original_code
-        has_optimized_prints = 'print(' in optimized_code
-        prints_preserved = has_original_prints == has_optimized_prints
-        
-        # Check for function/class definitions
-        has_original_defs = 'def ' in original_code or 'class ' in original_code
-        has_optimized_defs = 'def ' in optimized_code or 'class ' in optimized_code
-        structure_preserved = has_original_defs == has_optimized_defs
-        
-        # Check if code is actually executable (has basic structure)
-        is_executable = (
-            optimized_code.strip() and 
-            not optimized_code.startswith('#') and
-            not optimized_code.startswith('"""') and
-            not optimized_code.startswith("'''")
-        )
-        
-        # Quality score (0-100)
-        quality_score = 0
-        if structure_preserved:
-            quality_score += 30
-        if prints_preserved:
-            quality_score += 20
-        if is_executable:
-            quality_score += 30
-        if line_reduction_ratio > 0.1:  # At least 10% reduction
-            quality_score += 20
+        if is_sql:
+            # SQL-specific quality analysis
+            has_original_select = 'SELECT' in original_code.upper()
+            has_optimized_select = 'SELECT' in optimized_code.upper()
+            has_original_from = 'FROM' in original_code.upper()
+            has_optimized_from = 'FROM' in optimized_code.upper()
+            
+            # Check if SQL structure is preserved
+            structure_preserved = (
+                has_original_select == has_optimized_select and
+                has_original_from == has_optimized_from
+            )
+            
+            # Check if code is actually executable (has basic SQL structure)
+            is_executable = (
+                optimized_code.strip() and 
+                'SELECT' in optimized_code.upper() and
+                'FROM' in optimized_code.upper()
+            )
+            
+            # Quality score for SQL (0-100)
+            quality_score = 0
+            if structure_preserved:
+                quality_score += 40
+            if is_executable:
+                quality_score += 40
+            if line_reduction_ratio > 0.05:  # At least 5% reduction for SQL
+                quality_score += 20
+            elif line_reduction_ratio == 0:  # No reduction is fine for SQL
+                quality_score += 10
+                
+        else:
+            # Python-specific quality analysis
+            has_original_prints = 'print(' in original_code
+            has_optimized_prints = 'print(' in optimized_code
+            prints_preserved = has_original_prints == has_optimized_prints
+            
+            # Check for function/class definitions
+            has_original_defs = 'def ' in original_code or 'class ' in original_code
+            has_optimized_defs = 'def ' in optimized_code or 'class ' in optimized_code
+            structure_preserved = has_original_defs == has_optimized_defs
+            
+            # Check if code is actually executable (has basic structure)
+            is_executable = (
+                optimized_code.strip() and 
+                not optimized_code.startswith('#') and
+                not optimized_code.startswith('"""') and
+                not optimized_code.startswith("'''")
+            )
+            
+            # Quality score for Python (0-100)
+            quality_score = 0
+            if structure_preserved:
+                quality_score += 30
+            if prints_preserved:
+                quality_score += 20
+            if is_executable:
+                quality_score += 30
+            if line_reduction_ratio > 0.1:  # At least 10% reduction
+                quality_score += 20
         
         return {
             "quality_score": quality_score,
             "line_reduction": line_reduction,
             "line_reduction_ratio": line_reduction_ratio,
-            "prints_preserved": prints_preserved,
             "structure_preserved": structure_preserved,
             "is_executable": is_executable,
+            "language": "SQL" if is_sql else "Python",
             "recommendation": "good" if quality_score >= 70 else "needs_improvement"
         }
     except Exception as e:
@@ -257,10 +233,7 @@ Ensure all code is syntactically valid and can run immediately."
             if any(keyword in optimized_code.upper() for keyword in ["SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE"]):
                 language = "sql"
             
-            # Validate syntax
-            if not validate_code_syntax(optimized_code, language):
-                logger.warning(f"Syntax validation failed for {language} code, returning original code")
-                return {"optimized_code": user_code}
+
             
             # Analyze optimization quality
             quality_analysis = analyze_code_quality(user_code, optimized_code)
@@ -287,101 +260,4 @@ Ensure all code is syntactically valid and can run immediately."
 
 
 
-@retry_with_backoff
-async def generate_optimization_summary(
-    original_code: str,
-    optimized_code: str,
-    question: str = ""
-) -> str:
-    """
-    Generate summary of changes between original and optimized code.
-    Provides bullet points of improvements and optimizations made.
-    """
-    try:
-        prompt = f"""
-You are a code reviewer. Given the original code and the optimized code, summarize in 3-5 bullet points what was changed, improved, or optimized. Be specific and concise. If possible, mention any bug fixes, performance improvements, or code style enhancements.
-
-Question (if relevant): {question}
-
-Original Code:
-{original_code}
-
-Optimized Code:
-{optimized_code}
-
-Return only a plain English summary, suitable for a multiline comment.
-"""
-        response = await client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=300
-        )
-        content = safe_strip(getattr(response.choices[0].message, 'content', None))
-        return content or "No summary available."
-    except Exception as e:
-        logger.error(f"Error generating optimization summary: {str(e)}")
-        return "No summary available."
-
-@retry_with_backoff
-async def generate_optimized_code_with_summary(
-    question: str,
-    user_code: str,
-    sample_input: str,
-    sample_output: str,
-    rag_context: Optional[str] = None,
-    model: str = MODEL_NAME
-) -> dict:
-    """
-    Generate optimized code with detailed summary.
-    Combines code optimization and explanation in single response.
-    """
-    try:
-        optimized_json = await generate_optimized_code(
-            question=question,
-            user_code=user_code,
-            sample_input=sample_input,
-            sample_output=sample_output,
-            rag_context=rag_context,
-            model=model
-        )
-        
-        # Parse the JSON response
-        if isinstance(optimized_json, str):
-            try:
-                optimized_json = json.loads(optimized_json)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON response: {str(e)}")
-                logger.error(f"Raw response: {optimized_json}")
-                return {
-                    "optimized_code": user_code,  # Return original code as fallback
-                    "optimization_summary": "Could not parse optimization result. Returning original code."
-                }
-        
-        # Extract the required fields with validation
-        optimized_code = optimized_json.get("optimized_code", "")
-        optimization_summary = optimized_json.get("optimization_summary", "No summary available.")
-        
-        # Validate optimized_code
-        if not optimized_code or not isinstance(optimized_code, str) or not optimized_code.strip():
-            logger.warning("LLM returned empty or invalid optimized_code, using original code")
-            optimized_code = user_code
-            optimization_summary = "No optimization was possible. Original code returned."
-        
-        # Final validation - ensure we have actual code
-        if optimized_code.strip() == "":
-            logger.error("Final optimized_code is empty, using original code")
-            optimized_code = user_code
-            optimization_summary = "Error: Generated code was empty. Original code returned."
-        
-        return {
-            "optimized_code": optimized_code,
-            "optimization_summary": optimization_summary
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in optimized code with summary: {str(e)}")
-        return {
-            "optimized_code": user_code,  # Return original code as fallback
-            "optimization_summary": f"Error during optimization: {str(e)}. Original code returned."
-        } 
+ 
