@@ -62,7 +62,7 @@ class UserSessionService:
             raise ValueError("Session not found")
         
         # Verify session belongs to user
-        if str(session["user_id"]) != self.user_id:
+        if str(session["user_id"]) != self3.user_id:
             raise ValueError("Access denied")
         
         session_data = session["meta"]["session_data"]

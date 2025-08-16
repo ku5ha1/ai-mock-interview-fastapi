@@ -35,11 +35,4 @@ Dockerfile
 # Logs
 *.log 
 
-deployment_package/
-info.txt
-
-test.mainquestionbanks.json
-
 API_DOCUMENTATION.md
-
-ni-live.mainquestionbanks.json

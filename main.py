@@ -11,7 +11,7 @@ from routes.mock_interview import router as mock_interview_router
 from routes.code_optimization import router as code_optimization_router
 from routes.approach_analysis import router as approach_analysis_router
 from routes.rag import router as rag_router
-from routes.code_execution import router as code_execution_router
+
 from services.db import create_indexes, get_db, check_collections
 import logging
 import asyncio
@@ -33,8 +33,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Check if running on AWS Lambda
-IS_LAMBDA = bool(os.getenv('AWS_LAMBDA_FUNCTION_NAME'))
+
 
 # Initialize FastAPI application
 app = FastAPI(title="Mock Interview API")
@@ -75,7 +74,7 @@ async def log_requests(request: Request, call_next):
                 "detail": str(e),
                 "path": request.url.path,
                 "method": request.method,
-                "traceback": traceback.format_exc() if IS_LAMBDA else None
+                "traceback": traceback.format_exc()
             }
         )
 
@@ -142,15 +141,14 @@ async def startup_event():
         error_msg = f"Startup Error: {str(e)}\n{traceback.format_exc()}"
         logger.warning(f"Failed to initialize RAGRetriever: {str(e)}")
         logger.error(error_msg)
-        if IS_LAMBDA:
-            raise
+        raise
 
 # Include all route modules
 app.include_router(mock_interview_router, prefix="/mock")
 app.include_router(code_optimization_router, prefix="/code")
 app.include_router(approach_analysis_router, prefix="/approach")
 app.include_router(rag_router)
-app.include_router(code_execution_router)
+
 
 
 @app.get("/health")
